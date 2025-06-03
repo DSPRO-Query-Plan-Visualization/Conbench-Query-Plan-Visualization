@@ -1,0 +1,72 @@
+[
+   {
+      "batch_id":"e5e38d2e1cfa4273b78ad4338d1f139b",
+      "change_annotations":{
+
+      },
+      "commit":"None",
+      "commit_repo_url":"https://github.com/fake/fake",
+      "error":"None",
+      "hardware":{
+         "architecture_name":"x86_64",
+         "cpu_core_count":0,
+         "cpu_frequency_max_hz":5137000000,
+         "cpu_l1d_cache_bytes":262144,
+         "cpu_l1i_cache_bytes":262144,
+         "cpu_l2_cache_bytes":8388608,
+         "cpu_l3_cache_bytes":16777216,
+         "cpu_model_name":"AMD Ryzen 7 7840HS with Radeon 780M Graphics",
+         "cpu_thread_count":16,
+         "gpu_count":0,
+         "gpu_product_names":[
+
+         ],
+         "id":"0683c992c1e870048000ab8fef95ef01",
+         "kernel_name":"6.14.6-arch1-1",
+         "memory_bytes":27917287424,
+         "name":"user",
+         "os_name":"Linux",
+         "os_version":"6.14.6-arch1-1-x86_64-with-glibc2.41",
+         "type":"machine"
+      },
+      "history_fingerprint":"7ea46781fb4fe5dfd69c6e71e9218633",
+      "id":"0683d7564d9271268000ba8612faeedf",
+      "links":{
+         "context":"http://localhost:5000/api/contexts/0683c992c1c67dbb80007b5b2f36275c/",
+         "info":"http://localhost:5000/api/info/0683c992c1d0775580004c93eb3f41cc/",
+         "list":"http://localhost:5000/api/benchmarks/",
+         "run":"http://localhost:5000/api/runs/774fac980cb24242bdc8a3e31acf5c98/",
+         "self":"http://localhost:5000/api/benchmarks/0683d7564d9271268000ba8612faeedf/"
+      },
+      "optional_benchmark_info":"None",
+      "run_id":"774fac980cb24242bdc8a3e31acf5c98",
+      "run_reason":"local test run",
+      "run_tags":{
+
+      },
+      "stats":{
+         "data":[
+            18050844041.0
+         ],
+         "iqr":"None",
+         "iterations":"None",
+         "max":"None",
+         "mean":18050844041.0,
+         "median":"None",
+         "min":"None",
+         "q1":"None",
+         "q3":"None",
+         "stdev":"None",
+         "time_unit":"None",
+         "times":[
+
+         ],
+         "unit":"ns"
+      },
+      "tags":{
+         "name":"Manufacturing"
+      },
+      "timestamp":"2025-06-02T09:56:52Z",
+      "validation":"None"
+   }
+]
