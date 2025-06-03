@@ -134,6 +134,8 @@ class BenchmarkResult(Base, EntityMixin):
 
     batch_id: Mapped[Optional[str]] = Nullable(s.Text)
 
+    query_plan: Mapped[Optional[str]] = Nullable(s.Text)
+
     # User-given 'benchmark start' time. Generally not a great criterion to
     # sort benchmark results by. Tracking insertion time would be better. Do
     # not store timezone information in this DB column. Instead, follow
@@ -189,7 +191,6 @@ class BenchmarkResult(Base, EntityMixin):
         Raises BenchmarkResultValidationError, exc message is expected to be
         emitted to the HTTP client in a Bad Request response.
         """
-
         validate_and_augment_result_tags(userres)
 
         # The dict that is used for DB insertion later, populated below.
@@ -300,6 +301,9 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_hash=hardware.hash,
             repo_url=repo_url,
         )
+
+        result_data_for_db["query_plan"] = userres.get("query_plan")
+
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
 
@@ -353,6 +357,7 @@ class BenchmarkResult(Base, EntityMixin):
                 "q3": to_float(benchmark_result.q3),
                 "iqr": to_float(benchmark_result.iqr),
             },
+            "query_plan":benchmark_result.query_plan or None,
             "error": benchmark_result.error,
         }
 
@@ -1680,6 +1685,8 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
         },
     )
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
+    #TODO: am besten dann wie bei stats übernehmen wenn wir die struktur wissen ^
+    query_plan = marshmallow.fields.String(required=False)
     error = marshmallow.fields.Dict(
         required=False,
         metadata={
