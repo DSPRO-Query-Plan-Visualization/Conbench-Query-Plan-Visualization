@@ -52,7 +52,7 @@ class SystestAdapter(BenchmarkAdapter):
                 context={"benchmark_language": "systest"},
                 tags={"name": result["query name"]},
                 github={"repository": "https://github.com/fake/fake"}, #TODO: might not be needed
-                query_plan="SECOND_TEST", # TODO: add attribute to conbench
+                query_plan="QUERY_PLAN",
             ))
 
         return benchmarkResults
