@@ -134,8 +134,6 @@ class BenchmarkResult(Base, EntityMixin):
 
     batch_id: Mapped[Optional[str]] = Nullable(s.Text)
 
-    query_plan: Mapped[Optional[str]] = Nullable(s.Text)
-
     # User-given 'benchmark start' time. Generally not a great criterion to
     # sort benchmark results by. Tracking insertion time would be better. Do
     # not store timezone information in this DB column. Instead, follow
@@ -162,6 +160,8 @@ class BenchmarkResult(Base, EntityMixin):
     error: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
     validation: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
     change_annotations: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
+
+    query_plan: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
 
     @staticmethod
     # We should work towards having a precise type annotation for `data`. It's
@@ -1222,6 +1222,17 @@ class BenchmarkResultSerializer:
     one = _Serializer()
     many = _Serializer(many=True)
 
+class BenchmarkResultQueryPlanSchema(marshmallow.Schema):
+    id      = marshmallow.fields.Integer()
+    label   = marshmallow.fields.String()
+    type    = marshmallow.fields.String()
+    inputs  = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=True)
+    outputs = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=True)
+
 
 class BenchmarkResultStatsSchema(marshmallow.Schema):
     data = marshmallow.fields.List(
@@ -1686,7 +1697,10 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
     )
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
     #TODO: am besten dann wie bei stats übernehmen wenn wir die struktur wissen ^
-    query_plan = marshmallow.fields.String(required=False)
+    query_plan = marshmallow.fields.List(
+        marshmallow.fields.Dict(),
+        required=False
+    )
     error = marshmallow.fields.Dict(
         required=False,
         metadata={

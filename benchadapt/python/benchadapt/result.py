@@ -2,7 +2,7 @@ import datetime
 import uuid
 import warnings
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from . import _machine_info
 
@@ -161,7 +161,7 @@ class BenchmarkResult:
     github: Dict[str, str] = field(
         default_factory=_machine_info.gh_commit_info_from_env
     )
-    query_plan: str = None
+    query_plan: List[Dict[str,any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self._maybe_set_run_name()
