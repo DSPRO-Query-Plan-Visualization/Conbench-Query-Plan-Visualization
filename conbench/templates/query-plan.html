@@ -3,3 +3,33 @@
         {{ benchmark.query_plan }}
     </li>
 </ul>
+<div id="container"></div>
+{% block scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://unpkg.com/d3-dag@1.1.0"></script>
+<script type="module">
+
+// accessing the query_plan just like above:
+const query_plan = {{ benchmark.query_plan | tojson }};
+console.log(query_plan);
+
+// d3-dag example from github: https://github.com/erikbrinkman/d3-dag?tab=readme-ov-file#installing
+const data = [
+    { id: "0" },
+    { id: "1", parentIds: ["0"] },
+    { id: "2", parentIds: ["0"] },
+    { id: "3", parentIds: ["1", "2"] }
+  ];
+  const dag = d3.graphStratify()(data);
+const layout = d3.sugiyama();
+layout(dag);
+
+for (const node of dag.nodes()) {
+  console.log(node.x, node.y);
+}
+for (const { points } of dag.links()) {
+  console.log(points);
+}
+
+</script>
+{% endblock %}
