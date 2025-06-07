@@ -1698,7 +1698,7 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
     #TODO: am besten dann wie bei stats übernehmen wenn wir die struktur wissen ^
     query_plan = marshmallow.fields.List(
-        marshmallow.fields.Dict(),
+        marshmallow.fields.Nested(BenchmarkResultQueryPlanSchema()),
         required=False
     )
     error = marshmallow.fields.Dict(
