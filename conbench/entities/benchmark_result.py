@@ -26,6 +26,8 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
+from ..entities.query_plan import (QueryPlan, QueryPlanSerializer)
+
 from ..entities._entity import (
     Base,
     EntityMixin,
@@ -94,6 +96,11 @@ class BenchmarkResult(Base, EntityMixin):
     hardware_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("hardware.id"))
     hardware: Mapped[Hardware] = relationship("Hardware", lazy="joined")
 
+    #log.info("TESTTEST\n\n")
+    query_plan: Mapped[QueryPlan] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
+    # sollte glaube ich Mapped[list["QueryPlan"]] sein da es mehrere query plans pro benchmarkresult gibt
+    #log.info("TESTTEST\n\n")
+
     # The "fingerprint" (identifier) of this result's "history" (timeseries group). Two
     # results with the same history_fingerprint should be directly comparable, because
     # the relevant experimental variables have been controlled. Right now, those
@@ -161,7 +168,7 @@ class BenchmarkResult(Base, EntityMixin):
     validation: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
     change_annotations: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
 
-    query_plan: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
+    #query_plan: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
 
     @staticmethod
     # We should work towards having a precise type annotation for `data`. It's
@@ -195,6 +202,7 @@ class BenchmarkResult(Base, EntityMixin):
 
         # The dict that is used for DB insertion later, populated below.
         result_data_for_db: Dict = {}
+        log.info("TESTTEST_2\n\n")
 
         if "stats" in userres:
             # First things first: use the complete user-given `stats` object
@@ -302,11 +310,20 @@ class BenchmarkResult(Base, EntityMixin):
             repo_url=repo_url,
         )
 
-        result_data_for_db["query_plan"] = userres.get("query_plan")
+        #result_data_for_db["query_plan"] = userres.get("query_plan")
 
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
 
+        log.info("TESTTEST_3\n\n")
+        log.info(f"-- [{userres['query_plan'][0]['label']}]")
+        query_plan_data = userres['query_plan'][0]
+        query_plan_data["benchmark_id"] = benchmark_result.id
+        query_plan = QueryPlan.create(query_plan_data)
+        log.info("TESTTEST_4\n\n")
+
+        #benchmark_result.query_plan = query_plan # for joined/selectin eager loading
+        log.info("TESTTEST_5\n\n")
         return benchmark_result
 
     def update(self, data):
@@ -357,7 +374,9 @@ class BenchmarkResult(Base, EntityMixin):
                 "q3": to_float(benchmark_result.q3),
                 "iqr": to_float(benchmark_result.iqr),
             },
-            "query_plan":benchmark_result.query_plan or None,
+            "query_plan":{
+                "label": benchmark_result.query_plan.label,
+            },
             "error": benchmark_result.error,
         }
 
@@ -378,6 +397,9 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
 
+            #query_plan_dict = QueryPlanSerializer().one.dump(benchmark_result.query_plan)
+
+            #out_dict["query_plan"] = query_plan_dict
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict
             out_dict["hardware"] = hardware_dict
@@ -1225,7 +1247,7 @@ class BenchmarkResultSerializer:
 class BenchmarkResultQueryPlanSchema(marshmallow.Schema):
     id      = marshmallow.fields.Integer()
     label   = marshmallow.fields.String()
-    type    = marshmallow.fields.String()
+    bla    = marshmallow.fields.String()
     inputs  = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
         required=True)
