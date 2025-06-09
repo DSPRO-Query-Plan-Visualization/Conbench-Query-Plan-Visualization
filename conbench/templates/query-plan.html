@@ -1,35 +1,78 @@
 <ul class="list-group">
     <li class="list-group-item list-group-item-primary">
-        {{ benchmark.query_plan }}
+        Raw Query Plan:
+        <pre>{{ benchmark.query_plan }}</pre>
     </li>
 </ul>
+
 <div id="container"></div>
+
 {% block scripts %}
-    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script src="https://unpkg.com/d3-dag@1.1.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://unpkg.com/d3-dag@1.1.0"></script>
 <script type="module">
+    // Extract query plan safely
+    const query_plan = {{ benchmark.query_plan | tojson | safe }};
 
-// accessing the query_plan just like above:
-const query_plan = {{ benchmark.query_plan | tojson }};
-console.log(query_plan);
 
-// d3-dag example from github: https://github.com/erikbrinkman/d3-dag?tab=readme-ov-file#installing
-const data = [
-    { id: "0" },
-    { id: "1", parentIds: ["0"] },
-    { id: "2", parentIds: ["0"] },
-    { id: "3", parentIds: ["1", "2"] }
-  ];
-  const dag = d3.graphStratify()(data);
-const layout = d3.sugiyama();
-layout(dag);
+    if (Array.isArray(query_plan) && query_plan.length > 0) {
+        const dag = d3.graphStratify()(query_plan);
+        const layout = d3.sugiyama();
+        layout(dag);
 
-for (const node of dag.nodes()) {
-  console.log(node.x, node.y);
-}
-for (const { points } of dag.links()) {
-  console.log(points);
-}
+        const width = 900;
+        const height = 600;
+        const svg = d3.select("#container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
 
+        const g = svg.append("g").attr("transform", "translate(40, 40)");
+
+        // Draw links
+        g.selectAll("path.link")
+            .data(dag.links())
+            .enter()
+            .append("path")
+            .attr("class", "link")
+            .attr("fill", "none")
+            .attr("stroke", "#555")
+            .attr("stroke-width", 1.5)
+            .attr("d", ({ points }) =>
+                d3.line()
+                    .curve(d3.curveCatmullRom)
+                    .x(d => d.x)
+                    .y(d => d.y)(points)
+            );
+
+        // Draw nodes
+        const nodes = g.selectAll("g.node")
+            .data(dag.nodes())
+            .enter()
+            .append("g")
+            .attr("class", "node")
+            .attr("transform", d => `translate(${d.x},${d.y})`);
+
+        nodes.append("rect")
+            .attr("x", -30)
+            .attr("y", -15)
+            .attr("width", 60)
+            .attr("height", 30)
+            .attr("fill", "#e8f0fe")
+            .attr("stroke", "#5a5a5a")
+            .attr("rx", 6)
+            .attr("ry", 6);
+
+        nodes.append("text")
+            .attr("text-anchor", "middle")
+            .attr("alignment-baseline", "middle")
+            .text(d => d.data.label || d.id);
+
+    } else {
+        // Fallback message
+        document.getElementById("container").innerHTML =
+            "<p><em>No query plan available yet. Please run a benchmark first.</em></p>";
+        console.warn("Query plan is empty or not a valid array.");
+    }
 </script>
 {% endblock %}
