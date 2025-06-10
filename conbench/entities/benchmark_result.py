@@ -26,7 +26,7 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
-from ..entities.query_plan import (QueryPlan, QueryPlanSerializer)
+#from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
 
 from ..entities._entity import (
     Base,
@@ -97,7 +97,7 @@ class BenchmarkResult(Base, EntityMixin):
     hardware: Mapped[Hardware] = relationship("Hardware", lazy="joined")
 
     #log.info("TESTTEST\n\n")
-    query_plan: Mapped[QueryPlan] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
+    #query_plan: Mapped[QueryPlan] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
     # sollte glaube ich Mapped[list["QueryPlan"]] sein da es mehrere query plans pro benchmarkresult gibt
     #log.info("TESTTEST\n\n")
 
@@ -169,6 +169,7 @@ class BenchmarkResult(Base, EntityMixin):
     change_annotations: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
 
     #query_plan: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
+    log.info("AAA\n\n")
 
     @staticmethod
     # We should work towards having a precise type annotation for `data`. It's
@@ -202,7 +203,6 @@ class BenchmarkResult(Base, EntityMixin):
 
         # The dict that is used for DB insertion later, populated below.
         result_data_for_db: Dict = {}
-        log.info("TESTTEST_2\n\n")
 
         if "stats" in userres:
             # First things first: use the complete user-given `stats` object
@@ -312,18 +312,33 @@ class BenchmarkResult(Base, EntityMixin):
 
         #result_data_for_db["query_plan"] = userres.get("query_plan")
 
+        # debug:
+        #bla = userres['query_plan']
+        #for i in bla:
+        #    for k, v in i.items():
+        #        info.log(f"[{k}]")
+        #info.log("AAA\n\n")
+        # bla = userres['query_plan']
+        #info.log("BBB\n\n")
+
+
+
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
 
-        log.info("TESTTEST_3\n\n")
-        log.info(f"-- [{userres['query_plan'][0]['label']}]")
-        query_plan_data = userres['query_plan'][0]
-        query_plan_data["benchmark_id"] = benchmark_result.id
-        query_plan = QueryPlan.create(query_plan_data)
-        log.info("TESTTEST_4\n\n")
+
+        log.info("\nQuery Plan: \n")
+        log.info(userres["query_plan"])
+
+#        log.info("TESTTEST_3\n\n")
+#        log.info(f"-- [{userres['query_plan'][0]['label']}]")
+#        query_plan_data = userres['query_plan'][0]
+#        query_plan_data["benchmark_id"] = benchmark_result.id
+#        query_plan = QueryPlan.create(query_plan_data) # create or save ?
+#        log.info("TESTTEST_4\n\n")
 
         #benchmark_result.query_plan = query_plan # for joined/selectin eager loading
-        log.info("TESTTEST_5\n\n")
+        log.info("end of class BenchmarkResult\n\n")
         return benchmark_result
 
     def update(self, data):
@@ -374,9 +389,9 @@ class BenchmarkResult(Base, EntityMixin):
                 "q3": to_float(benchmark_result.q3),
                 "iqr": to_float(benchmark_result.iqr),
             },
-            "query_plan":{
-                "label": benchmark_result.query_plan.label,
-            },
+#            "query_plan":{
+#                "label": benchmark_result.query_plan.label,
+#            }, # mache es so wie bei hardware_dict
             "error": benchmark_result.error,
         }
 
@@ -1244,16 +1259,24 @@ class BenchmarkResultSerializer:
     one = _Serializer()
     many = _Serializer(many=True)
 
-class BenchmarkResultQueryPlanSchema(marshmallow.Schema):
-    id      = marshmallow.fields.Integer()
-    label   = marshmallow.fields.String()
-    bla    = marshmallow.fields.String()
-    inputs  = marshmallow.fields.List(
+class QueryPlanNodeSchema(marshmallow.Schema):
+    id = marshmallow.fields.Integer()
+    label = marshmallow.fields.String()
+    node_type = marshmallow.fields.String()
+    inputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
         required=True)
     outputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
         required=True)
+
+class QueryPlanSchema(marshmallow.Schema):
+    serializedLogicalPlan = marshmallow.fields.List(
+        marshmallow.fields.Nested(QueryPlanNodeSchema),
+        required=False,
+    )
+
+
 
 
 class BenchmarkResultStatsSchema(marshmallow.Schema):
@@ -1718,11 +1741,8 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
         },
     )
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
-    #TODO: am besten dann wie bei stats übernehmen wenn wir die struktur wissen ^
-    query_plan = marshmallow.fields.List(
-        marshmallow.fields.Nested(BenchmarkResultQueryPlanSchema()),
-        required=False
-    )
+    query_plan = marshmallow.fields.Nested(QueryPlanSchema(), required=False)
+
     error = marshmallow.fields.Dict(
         required=False,
         metadata={

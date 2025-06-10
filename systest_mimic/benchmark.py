@@ -38,11 +38,19 @@ class SystestAdapter(BenchmarkAdapter):
         self.results = self.transform_results()
 
     def _transform_results(self) -> List[BenchmarkResult]:
-        with open(self.systest_working_dir + "/debug_results.json", "r") as f:
+        with open(self.systest_working_dir + "/debug2.json", "r") as f:
             raw_results = json.load(f)
 
         benchmarkResults = []
-
+        """
+        best to do:
+        
+            query_plan= { "serializedLogicalPlan" : result["serializedLogicalPlan"], } 
+            
+        looping over each query plan and filling in the names automatically on the server side
+        will make adding new query plans easy -> simply add to benchmark.py,
+        no need to change server code...
+        """
         for result in raw_results:
             benchmarkResults.append(BenchmarkResult(
                 stats={
@@ -52,7 +60,9 @@ class SystestAdapter(BenchmarkAdapter):
                 context={"benchmark_language": "systest"},
                 tags={"name": result["query name"]},
                 github={"repository": "https://github.com/fake/fake"}, #TODO: might not be needed
-                query_plan=result["serializedLogicalPlan"],
+                query_plan={
+                    "serializedLogicalPlan": result["serializedLogicalPlan"]
+                },
             ))
 
         return benchmarkResults
