@@ -26,7 +26,7 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
-#from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
+from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
 
 from ..entities._entity import (
     Base,
