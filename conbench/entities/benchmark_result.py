@@ -98,6 +98,7 @@ class BenchmarkResult(Base, EntityMixin):
 
     #log.info("TESTTEST\n\n")
     #query_plan: Mapped[QueryPlan] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
+    query_plan: Mapped[List[QueryPlan]] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
     # sollte glaube ich Mapped[list["QueryPlan"]] sein da es mehrere query plans pro benchmarkresult gibt
     #log.info("TESTTEST\n\n")
 
@@ -329,6 +330,8 @@ class BenchmarkResult(Base, EntityMixin):
 
         log.info("\nQuery Plan: \n")
         log.info(userres["query_plan"])
+
+
 
 #        log.info("TESTTEST_3\n\n")
 #        log.info(f"-- [{userres['query_plan'][0]['label']}]")
@@ -1270,12 +1273,6 @@ class QueryPlanNodeSchema(marshmallow.Schema):
         marshmallow.fields.Integer(allow_none=True),
         required=True)
 
-class QueryPlanSchema(marshmallow.Schema):
-    serializedLogicalPlan = marshmallow.fields.List(
-        marshmallow.fields.Nested(QueryPlanNodeSchema),
-        required=False,
-    )
-
 
 
 
@@ -1740,8 +1737,21 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
             )
         },
     )
+
+    # TODO: might have to add a description / metadata
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
-    query_plan = marshmallow.fields.Nested(QueryPlanSchema(), required=False)
+    query_plan = marshmallow.fields.List(
+        marshmallow.fields.Tuple((
+            marshmallow.fields.String(required=False),
+            marshmallow.fields.List(
+                marshmallow.fields.Nested(
+                    QueryPlanNodeSchema,
+                    required=False,
+                )
+            )
+        )),
+        required=False
+    )
 
     error = marshmallow.fields.Dict(
         required=False,

@@ -161,7 +161,7 @@ class BenchmarkResult:
     github: Dict[str, str] = field(
         default_factory=_machine_info.gh_commit_info_from_env
     )
-    query_plan: Dict[ str , Any ] = field(default_factory=dict) # works too
+    query_plan: List[ List[Any] ] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self._maybe_set_run_name()
