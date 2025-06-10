@@ -1285,10 +1285,10 @@ class QueryPlanNodeSchema(marshmallow.Schema):
     node_type = marshmallow.fields.String()
     inputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
-        required=True)
+        required=False)
     outputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
-        required=True)
+        required=False)
 
 
 
