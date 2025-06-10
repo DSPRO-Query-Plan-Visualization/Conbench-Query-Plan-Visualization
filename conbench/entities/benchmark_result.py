@@ -331,6 +331,23 @@ class BenchmarkResult(Base, EntityMixin):
         log.info("\nQuery Plan: \n")
         log.info(userres["query_plan"])
 
+        log.info("####################################")
+        for query_plan_type, plan in userres["query_plan"]:
+            log.info(query_plan_type)
+            query_plan = QueryPlan.create({"query_plan_type":query_plan_type, "benchmark_id":benchmark_result.id})
+
+            for node in plan:
+                QueryPlanNode.create({
+                    "query_plan_id": query_plan.id,
+                    "id" : node["id"],
+                    "label" : node["label"],
+                    "node_type" : node["node_type"],
+                    "inputs": node["inputs"],
+                    "outputs": node["outputs"],
+                })
+
+
+        log.info("####################################")
 
 
 #        log.info("TESTTEST_3\n\n")
