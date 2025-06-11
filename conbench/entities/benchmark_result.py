@@ -26,6 +26,9 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
+from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
+
+
 from ..entities._entity import (
     Base,
     EntityMixin,
@@ -94,6 +97,9 @@ class BenchmarkResult(Base, EntityMixin):
     hardware_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("hardware.id"))
     hardware: Mapped[Hardware] = relationship("Hardware", lazy="joined")
 
+    # TODO: re-check if selectin is the better choice compared to joined
+    query_plan: Mapped[List[QueryPlan]] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
+
     # The "fingerprint" (identifier) of this result's "history" (timeseries group). Two
     # results with the same history_fingerprint should be directly comparable, because
     # the relevant experimental variables have been controlled. Right now, those
@@ -160,8 +166,6 @@ class BenchmarkResult(Base, EntityMixin):
     error: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
     validation: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
     change_annotations: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
-
-    query_plan: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
 
     @staticmethod
     # We should work towards having a precise type annotation for `data`. It's
@@ -302,10 +306,20 @@ class BenchmarkResult(Base, EntityMixin):
             repo_url=repo_url,
         )
 
-        result_data_for_db["query_plan"] = userres.get("query_plan")
-
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
+
+        for query_plan_type, plan in userres["query_plan"]:
+            query_plan = QueryPlan.create({"query_plan_type":query_plan_type, "benchmark_id":benchmark_result.id})
+            for node in plan:
+                QueryPlanNode.create({
+                    "query_plan_id": query_plan.id,
+                    "id" : node["id"],
+                    "label" : node["label"],
+                    "node_type" : node["node_type"],
+                    "inputs": node["inputs"],
+                    "outputs": node["outputs"],
+                })
 
         return benchmark_result
 
@@ -357,7 +371,6 @@ class BenchmarkResult(Base, EntityMixin):
                 "q3": to_float(benchmark_result.q3),
                 "iqr": to_float(benchmark_result.iqr),
             },
-            "query_plan":benchmark_result.query_plan or None,
             "error": benchmark_result.error,
         }
 
@@ -378,6 +391,12 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
 
+            # sets query_plan to list of query_plans or []
+            query_plan_list = []
+            for qp in benchmark_result.query_plan:
+                query_plan_list.append(QueryPlanSerializer().many._dump(qp)) # feels wrong
+
+            out_dict["query_plan"] = query_plan_list
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict
             out_dict["hardware"] = hardware_dict
@@ -1222,16 +1241,18 @@ class BenchmarkResultSerializer:
     one = _Serializer()
     many = _Serializer(many=True)
 
-class BenchmarkResultQueryPlanSchema(marshmallow.Schema):
-    id      = marshmallow.fields.Integer()
-    label   = marshmallow.fields.String()
-    type    = marshmallow.fields.String()
-    inputs  = marshmallow.fields.List(
+class QueryPlanNodeSchema(marshmallow.Schema):
+    id = marshmallow.fields.Integer()
+    label = marshmallow.fields.String()
+    node_type = marshmallow.fields.String()
+    inputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
-        required=True)
+        required=False)
     outputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
-        required=True)
+        required=False)
+
+
 
 
 class BenchmarkResultStatsSchema(marshmallow.Schema):
@@ -1695,12 +1716,23 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
             )
         },
     )
+
+    # TODO: might have to add a description / metadata
+    # TODO: decide where required is true / false
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
-    #TODO: am besten dann wie bei stats übernehmen wenn wir die struktur wissen ^
     query_plan = marshmallow.fields.List(
-        marshmallow.fields.Nested(BenchmarkResultQueryPlanSchema()),
+        marshmallow.fields.Tuple((
+            marshmallow.fields.String(required=False),
+            marshmallow.fields.List(
+                marshmallow.fields.Nested(
+                    QueryPlanNodeSchema,
+                    required=False,
+                )
+            )
+        )),
         required=False
     )
+
     error = marshmallow.fields.Dict(
         required=False,
         metadata={
