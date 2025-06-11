@@ -82,7 +82,7 @@ def get_tables_in_cleanup_order():
 
     tables = delarative_base.metadata.sorted_tables
 
-    sort_by_name = ["benchmark_result"]
+    sort_by_name = ["query_plan_node","query_plan","benchmark_result"]
 
     tabledict = {t.name: t for t in tables}
     sorted_tables = []
@@ -114,6 +114,24 @@ def empty_db_tables():
     for table in tables:
         _session.execute(table.delete())
         log.debug("deleted table: %s", table)
+
+    _session.commit()
+    log.debug("all deletions committed: %s", table)
+
+def empty_db_tables_except_user():
+    """
+    Copy of empty_db_tables() but keeps the user table intact.
+    """
+    if not Config.TESTING:
+        log.warning("empty_db_tables_except_user() called in non-testing mode, skip")
+        return
+
+    tables = get_tables_in_cleanup_order()
+
+    for table in tables:
+        if table.name != "user":
+            _session.execute(table.delete())
+            log.debug("deleted table: %s", table)
 
     _session.commit()
     log.debug("all deletions committed: %s", table)

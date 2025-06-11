@@ -311,19 +311,6 @@ class BenchmarkResult(Base, EntityMixin):
             repo_url=repo_url,
         )
 
-        #result_data_for_db["query_plan"] = userres.get("query_plan")
-
-        # debug:
-        #bla = userres['query_plan']
-        #for i in bla:
-        #    for k, v in i.items():
-        #        info.log(f"[{k}]")
-        #info.log("AAA\n\n")
-        # bla = userres['query_plan']
-        #info.log("BBB\n\n")
-
-
-
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
 
@@ -348,14 +335,6 @@ class BenchmarkResult(Base, EntityMixin):
 
 
         log.info("####################################")
-
-
-#        log.info("TESTTEST_3\n\n")
-#        log.info(f"-- [{userres['query_plan'][0]['label']}]")
-#        query_plan_data = userres['query_plan'][0]
-#        query_plan_data["benchmark_id"] = benchmark_result.id
-#        query_plan = QueryPlan.create(query_plan_data) # create or save ?
-#        log.info("TESTTEST_4\n\n")
 
         #benchmark_result.query_plan = query_plan # for joined/selectin eager loading
         log.info("end of class BenchmarkResult\n\n")
