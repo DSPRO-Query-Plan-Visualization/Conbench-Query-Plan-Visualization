@@ -1,78 +1,129 @@
-<ul class="list-group">
+{% block head %}
+<style>
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    svg { }
+</style>
+{% endblock %}
+
+{% block content %}
+<ul class="list-group mb-4">
     <li class="list-group-item list-group-item-primary">
         Raw Query Plan:
         <pre>{{ benchmark.query_plan }}</pre>
     </li>
 </ul>
 
-<div id="container"></div>
+<svg id="svg"></svg>
+{% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-<script src="https://unpkg.com/d3-dag@1.1.0"></script>
+
 <script type="module">
-    // Extract query plan safely
-    const query_plan = {{ benchmark.query_plan | tojson | safe }};
+    import * as d3    from "https://cdn.skypack.dev/d3@7.8.4";
+    import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.1.0";
 
+    // 1. Grab the plan from Flask/Django context, then map to the format d3-dag needs
+    const raw = {{ benchmark.query_plan | tojson | safe }};
+    const data = raw.map(d => ({
+        id:        d.id,
+        parentIds: d.inputs,
+        label:     d.label,
+        type:      d.node_type
+    }));
 
-    if (Array.isArray(query_plan) && query_plan.length > 0) {
-        const dag = d3.graphStratify()(query_plan);
-        const layout = d3.sugiyama();
-        layout(dag);
+    // 2. Build the DAG
+    const stratify = d3dag.graphStratify()
+        .id(d => d.id)
+        .parentIds(d => d.parentIds);
+    const graph = stratify(data);
 
-        const width = 900;
-        const height = 600;
-        const svg = d3.select("#container")
-            .append("svg")
-            .attr("width", width)
-            .attr("height", height);
+    // 3. Setup layout
+    const nodeRadius = 40;
+    const nodeSize   = [nodeRadius * 2, nodeRadius * 2];
+    const layout     = d3dag.sugiyama()
+        .nodeSize(nodeSize)
+        .gap([nodeRadius, nodeRadius])
+        .tweaks([d3dag.tweakShape(nodeSize, d3dag.shapeEllipse)]);
+    const { width, height } = layout(graph);
 
-        const g = svg.append("g").attr("transform", "translate(40, 40)");
+    // 4. Prepare the SVG
+    const svg = d3.select("#svg")
+        .attr("width",  width + 4)
+        .attr("height", height + 4)
+        .append("g")
+        .attr("transform", "translate(2,2)");
 
-        // Draw links
-        g.selectAll("path.link")
-            .data(dag.links())
-            .enter()
-            .append("path")
-            .attr("class", "link")
-            .attr("fill", "none")
-            .attr("stroke", "#555")
-            .attr("stroke-width", 1.5)
-            .attr("d", ({ points }) =>
-                d3.line()
-                    .curve(d3.curveCatmullRom)
-                    .x(d => d.x)
-                    .y(d => d.y)(points)
-            );
+    // 5. Prepare scales and defs
+    const types = Array.from(new Set(data.map(d => d.type)));
+    const color = d3.scaleOrdinal(d3.schemeCategory10).domain(types);
+    const defs  = svg.append("defs");
 
-        // Draw nodes
-        const nodes = g.selectAll("g.node")
-            .data(dag.nodes())
-            .enter()
-            .append("g")
-            .attr("class", "node")
-            .attr("transform", d => `translate(${d.x},${d.y})`);
+    graph.links().forEach(link => {
+        const gid = encodeURIComponent(`${link.source.data.id}--${link.target.data.id}`);
+        defs.append("linearGradient")
+            .attr("id", gid)
+            .attr("gradientUnits", "userSpaceOnUse")
+            .attr("x1", link.points[0][0]).attr("y1", link.points[0][1])
+            .attr("x2", link.points.at(-1)[0]).attr("y2", link.points.at(-1)[1])
+            .call(g => {
+                g.append("stop").attr("offset","0%").attr("stop-color", color(link.source.data.type));
+                g.append("stop").attr("offset","100%").attr("stop-color", color(link.target.data.type));
+            });
+    });
 
-        nodes.append("rect")
-            .attr("x", -30)
-            .attr("y", -15)
-            .attr("width", 60)
-            .attr("height", 30)
-            .attr("fill", "#e8f0fe")
-            .attr("stroke", "#5a5a5a")
-            .attr("rx", 6)
-            .attr("ry", 6);
+    const line = d3.line().curve(d3.curveMonotoneY);
 
-        nodes.append("text")
-            .attr("text-anchor", "middle")
-            .attr("alignment-baseline", "middle")
-            .text(d => d.data.label || d.id);
+    // 6. Draw links
+    svg.append("g").attr("id","links")
+        .selectAll("path")
+        .data(graph.links())
+        .join("path")
+        .attr("fill","none")
+        .attr("stroke-width",3)
+        .attr("stroke", d =>
+            `url(#${encodeURIComponent(d.source.data.id + "--" + d.target.data.id)})`
+        )
+        .attr("d", d => line(d.points));
 
-    } else {
-        // Fallback message
-        document.getElementById("container").innerHTML =
-            "<p><em>No query plan available yet. Please run a benchmark first.</em></p>";
-        console.warn("Query plan is empty or not a valid array.");
+    // 7. Draw nodes
+    const nodes = svg.append("g").attr("id","nodes")
+        .selectAll("g")
+        .data(graph.nodes())
+        .join("g")
+        .attr("transform", d => `translate(${d.x},${d.y})`);
+
+    nodes.append("circle")
+        .attr("r", nodeRadius)
+        .attr("fill", d => color(d.data.type));
+
+    nodes.append("text")
+        .text(d => d.data.label)
+        .attr("font-family","sans-serif")
+        .attr("font-size",12)
+        .attr("text-anchor","middle")
+        .attr("alignment-baseline","middle")
+        .attr("fill","white");
+
+    // 8. Draw arrowheads
+    const arrow = d3.symbol().type(d3.symbolTriangle).size(80);
+    function arrowTransform({ points }) {
+        const p     = points.slice(-2);
+        const angle = (Math.atan2(p[1][1]-p[0][1], p[1][0]-p[0][0]) * 180/Math.PI) + 90;
+        return `translate(${p[1][0]},${p[1][1]}) rotate(${angle})`;
     }
+    svg.append("g").attr("id","arrows")
+        .selectAll("path")
+        .data(graph.links())
+        .join("path")
+        .attr("d", arrow)
+        .attr("transform", arrowTransform)
+        .attr("fill", d => color(d.target.data.type))
+        .attr("stroke","white")
+        .attr("stroke-width",2)
+        .attr(
+            "stroke-dasharray",
+            `${Math.sqrt((4*80)/Math.sqrt(3))},${Math.sqrt((4*80)/Math.sqrt(3))}`
+        );
 </script>
 {% endblock %}
