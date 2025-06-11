@@ -26,7 +26,8 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
-from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
+from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer, QueryPlanNodeSerializer)
+
 
 from ..entities._entity import (
     Base,
@@ -411,7 +412,14 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
 
-            #query_plan_dict = QueryPlanSerializer().one.dump(benchmark_result.query_plan)
+            res = []
+            for qp in benchmark_result.query_plan:
+                res.append(QueryPlanSerializer().many._dump(qp))
+
+            log.info("res:")
+            log.info(res)
+            log.info("\n\n\n")
+            out_dict["query_plan"] = res
 
             #out_dict["query_plan"] = query_plan_dict
             out_dict["tags"] = tags

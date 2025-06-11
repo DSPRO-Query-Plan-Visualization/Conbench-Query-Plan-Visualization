@@ -26,9 +26,7 @@ class QueryPlan(Base, EntityMixin["QueryPlan"]):
 
 class _QueryPlanSerializer(EntitySerializer):
     def _dump(self, query_plan):
-        log.info("serializing query_plan \n\n")
-        result = [{"test":"bla"}]
-
+        result = [query_plan.query_plan_type, [ QueryPlanNodeSerializer().many._dump(query_plan_node) for query_plan_node in query_plan.query_plan_node ] ]
         return result
 
 
