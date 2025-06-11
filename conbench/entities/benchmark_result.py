@@ -26,7 +26,7 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
-from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer, QueryPlanNodeSerializer)
+from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
 
 
 from ..entities._entity import (
@@ -97,11 +97,8 @@ class BenchmarkResult(Base, EntityMixin):
     hardware_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("hardware.id"))
     hardware: Mapped[Hardware] = relationship("Hardware", lazy="joined")
 
-    #log.info("TESTTEST\n\n")
-    #query_plan: Mapped[QueryPlan] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
+    # TODO: re-check if selectin is the better choice compared to joined
     query_plan: Mapped[List[QueryPlan]] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
-    # sollte glaube ich Mapped[list["QueryPlan"]] sein da es mehrere query plans pro benchmarkresult gibt
-    #log.info("TESTTEST\n\n")
 
     # The "fingerprint" (identifier) of this result's "history" (timeseries group). Two
     # results with the same history_fingerprint should be directly comparable, because
@@ -169,9 +166,6 @@ class BenchmarkResult(Base, EntityMixin):
     error: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
     validation: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
     change_annotations: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
-
-    #query_plan: Mapped[Optional[dict]] = Nullable(postgresql.JSONB)
-    log.info("AAA\n\n")
 
     @staticmethod
     # We should work towards having a precise type annotation for `data`. It's
@@ -315,15 +309,8 @@ class BenchmarkResult(Base, EntityMixin):
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
 
-
-        log.info("\nQuery Plan: \n")
-        log.info(userres["query_plan"])
-
-        log.info("####################################")
         for query_plan_type, plan in userres["query_plan"]:
-            log.info(query_plan_type)
             query_plan = QueryPlan.create({"query_plan_type":query_plan_type, "benchmark_id":benchmark_result.id})
-
             for node in plan:
                 QueryPlanNode.create({
                     "query_plan_id": query_plan.id,
@@ -334,11 +321,6 @@ class BenchmarkResult(Base, EntityMixin):
                     "outputs": node["outputs"],
                 })
 
-
-        log.info("####################################")
-
-        #benchmark_result.query_plan = query_plan # for joined/selectin eager loading
-        log.info("end of class BenchmarkResult\n\n")
         return benchmark_result
 
     def update(self, data):
@@ -389,9 +371,6 @@ class BenchmarkResult(Base, EntityMixin):
                 "q3": to_float(benchmark_result.q3),
                 "iqr": to_float(benchmark_result.iqr),
             },
-#            "query_plan":{
-#                "label": benchmark_result.query_plan.label,
-#            }, # mache es so wie bei hardware_dict
             "error": benchmark_result.error,
         }
 
@@ -412,16 +391,12 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
 
-            res = []
+            # sets query_plan to list of query_plans or []
+            query_plan_list = []
             for qp in benchmark_result.query_plan:
-                res.append(QueryPlanSerializer().many._dump(qp))
+                query_plan_list.append(QueryPlanSerializer().many._dump(qp)) # feels wrong
 
-            log.info("res:")
-            log.info(res)
-            log.info("\n\n\n")
-            out_dict["query_plan"] = res
-
-            #out_dict["query_plan"] = query_plan_dict
+            out_dict["query_plan"] = query_plan_list
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict
             out_dict["hardware"] = hardware_dict
@@ -1743,6 +1718,7 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
     )
 
     # TODO: might have to add a description / metadata
+    # TODO: decide where required is true / false
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
     query_plan = marshmallow.fields.List(
         marshmallow.fields.Tuple((
