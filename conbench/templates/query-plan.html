@@ -1,8 +1,9 @@
 {% block head %}
 <style>
     html, body { height: 100%; margin: 0; }
-    body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
-    svg { }
+    body { display: flex; align-items: center; justify-content: center; flex-direction: column; overflow: hidden; }
+    #controls { margin: 1rem; }
+    svg { border: 1px solid #ccc; }
 </style>
 {% endblock %}
 
@@ -10,120 +11,180 @@
 <ul class="list-group mb-4">
     <li class="list-group-item list-group-item-primary">
         Raw Query Plan:
-        <pre>{{ benchmark.query_plan }}</pre>
+        <pre id="raw-plan">{{ benchmark.query_plan }}</pre>
     </li>
 </ul>
+
+<div id="controls">
+    <label for="plan-select">Choose a plan:</label>
+    <select id="plan-select">
+        <option value="server">Server-provided plan</option>
+        <option value="serializedLogicalPlan">Logical Plan</option>
+        <option value="serializedPhysicalPlan">Physical Plan</option>
+        <option value="serializedAlternativePlan">Alternative Plan</option>
+    </select>
+</div>
 
 <svg id="svg"></svg>
 {% endblock %}
 
 {% block scripts %}
-// script was inspired from https://erikbrinkman.github.io/d3-dag/ - Sugiyama
 <script type="module">
     import * as d3    from "https://cdn.skypack.dev/d3@7.8.4";
     import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.1.0";
 
-    // 1. Grab the plan from Flask/Django context, then map to the format d3-dag needs
-    const raw = {{ benchmark.query_plan | tojson | safe }};
-    const data = raw.map(d => ({
-        id:        d.id,
-        parentIds: d.inputs,
-        label:     d.label,
-        type:      d.node_type
-    }));
+    // 1) Server‐provided
+    const serverPlan = {{ benchmark.query_plan | tojson | safe }};
 
-    // 2. Build the DAG
-    const stratify = d3dag.graphStratify()
-        .id(d => d.id)
-        .parentIds(d => d.parentIds);
-    const graph = stratify(data);
+    // 2) Hard-coded examples
+    const plans = [
+        [
+            "serializedLogicalPlan",
+            [
+                { "id": "1",  "inputs": [],        "label": "Source_A",   "node_type": "Source",    "outputs": ["2", "3"] },
+                { "id": "2",  "inputs": ["1"],     "label": "Filter_A",   "node_type": "Filter",    "outputs": ["4", "5"] },
+                { "id": "3",  "inputs": ["1"],     "label": "Filter_B",   "node_type": "Filter",    "outputs": ["5"] },
+                { "id": "4",  "inputs": ["2"],     "label": "Project_A",  "node_type": "Project",   "outputs": ["6"] },
+                { "id": "5",  "inputs": ["2","3"], "label": "Join_A",     "node_type": "Join",      "outputs": ["7", "8"] },
+                { "id": "6",  "inputs": ["4"],     "label": "Aggregate_A","node_type": "Aggregate", "outputs": ["9"] },
+                { "id": "7",  "inputs": ["5"],     "label": "Sink_A",     "node_type": "Sink",      "outputs": [] },
+                { "id": "8",  "inputs": ["5"],     "label": "Project_B",  "node_type": "Project",   "outputs": ["9", "10"] },
+                { "id": "9",  "inputs": ["6","8"], "label": "Join_B",     "node_type": "Join",      "outputs": ["10"] },
+                { "id": "10", "inputs": ["8","9"], "label": "Sink_B",     "node_type": "Sink",      "outputs": [] }
+            ]
+        ],
+        [
+            "serializedPhysicalPlan",
+            [
+                { "id": "1",  "inputs": [],        "label": "TableScan",       "node_type": "TableScanExec",   "outputs": ["2", "3", "4"] },
+                { "id": "2",  "inputs": ["1"],     "label": "FilterExec_A",    "node_type": "FilterExec",       "outputs": ["5"] },
+                { "id": "3",  "inputs": ["1"],     "label": "FilterExec_B",    "node_type": "FilterExec",       "outputs": ["5", "6"] },
+                { "id": "4",  "inputs": ["1"],     "label": "ProjectExec",     "node_type": "ProjectionExec",   "outputs": ["6"] },
+                { "id": "5",  "inputs": ["2","3"], "label": "HashJoinExec",    "node_type": "HashJoinExec",     "outputs": ["7"] },
+                { "id": "6",  "inputs": ["3","4"], "label": "SortExec",        "node_type": "SortExec",         "outputs": ["7", "8"] },
+                { "id": "7",  "inputs": ["5","6"], "label": "HashAggExec",     "node_type": "HashAggregateExec","outputs": ["9"] },
+                { "id": "8",  "inputs": ["6"],     "label": "ShuffleExec",     "node_type": "ExchangeExec",     "outputs": ["9", "10"] },
+                { "id": "9",  "inputs": ["7","8"], "label": "SinkExec_A",       "node_type": "SinkExec",         "outputs": [] },
+                { "id": "10", "inputs": ["8"],     "label": "SinkExec_B",       "node_type": "SinkExec",         "outputs": [] }
+            ]
+        ],
+        [
+            "serializedAlternativePlan",
+            [
+                { "id": "1",  "inputs": [],        "label": "Source_X",   "node_type": "Source",     "outputs": ["2", "3"] },
+                { "id": "2",  "inputs": ["1"],     "label": "Scan_X",     "node_type": "Scan",       "outputs": ["4", "5"] },
+                { "id": "3",  "inputs": [],        "label": "Source_Y",   "node_type": "Source",     "outputs": ["4", "5"] },
+                { "id": "4",  "inputs": ["2","3"], "label": "Join_XY",    "node_type": "Join",       "outputs": ["6", "7"] },
+                { "id": "5",  "inputs": ["2","3"], "label": "Filter_XY",  "node_type": "Filter",     "outputs": ["7"] },
+                { "id": "6",  "inputs": ["4"],     "label": "Project_X",  "node_type": "Project",    "outputs": ["8", "9"] },
+                { "id": "7",  "inputs": ["4","5"], "label": "Aggregate_Y", "node_type": "Aggregate",  "outputs": ["9"] },
+                { "id": "8",  "inputs": ["6"],     "label": "Sink_X",     "node_type": "Sink",       "outputs": [] },
+                { "id": "9",  "inputs": ["6","7"], "label": "Sink_Y",     "node_type": "Sink",       "outputs": ["10"] },
+                { "id": "10", "inputs": ["9"],     "label": "Sink_Z",     "node_type": "Sink",       "outputs": [] }
+            ]
+        ]
+    ];
 
-    // 3. Setup layout
-    const nodeRadius = 40;
-    const nodeSize   = [nodeRadius * 2, nodeRadius * 2];
-    const layout     = d3dag.sugiyama()
-        .nodeSize(nodeSize)
-        .gap([nodeRadius, nodeRadius])
-        .tweaks([d3dag.tweakShape(nodeSize, d3dag.shapeEllipse)]);
-    const { width, height } = layout(graph);
-
-    // 4. Prepare the SVG
-    const svg = d3.select("#svg")
-        .attr("width",  width + 4)
-        .attr("height", height + 4)
-        .append("g")
-        .attr("transform", "translate(2,2)");
-
-    // 5. Prepare scales and defs
-    const types = Array.from(new Set(data.map(d => d.type)));
-    const color = d3.scaleOrdinal(d3.schemeCategory10).domain(types);
-    const defs  = svg.append("defs");
-
-    graph.links().forEach(link => {
-        const gid = encodeURIComponent(`${link.source.data.id}--${link.target.data.id}`);
-        defs.append("linearGradient")
-            .attr("id", gid)
-            .attr("gradientUnits", "userSpaceOnUse")
-            .attr("x1", link.points[0][0]).attr("y1", link.points[0][1])
-            .attr("x2", link.points.at(-1)[0]).attr("y2", link.points.at(-1)[1])
-            .call(g => {
-                g.append("stop").attr("offset","0%").attr("stop-color", color(link.source.data.type));
-                g.append("stop").attr("offset","100%").attr("stop-color", color(link.target.data.type));
-            });
-    });
-
-    const line = d3.line().curve(d3.curveMonotoneY);
-
-    // 6. Draw links
-    svg.append("g").attr("id","links")
-        .selectAll("path")
-        .data(graph.links())
-        .join("path")
-        .attr("fill","none")
-        .attr("stroke-width",3)
-        .attr("stroke", d =>
-            `url(#${encodeURIComponent(d.source.data.id + "--" + d.target.data.id)})`
-        )
-        .attr("d", d => line(d.points));
-
-    // 7. Draw nodes
-    const nodes = svg.append("g").attr("id","nodes")
-        .selectAll("g")
-        .data(graph.nodes())
-        .join("g")
-        .attr("transform", d => `translate(${d.x},${d.y})`);
-
-    nodes.append("circle")
-        .attr("r", nodeRadius)
-        .attr("fill", d => color(d.data.type));
-
-    nodes.append("text")
-        .text(d => d.data.label)
-        .attr("font-family","sans-serif")
-        .attr("font-size",12)
-        .attr("text-anchor","middle")
-        .attr("alignment-baseline","middle")
-        .attr("fill","white");
-
-    // 8. Draw arrowheads
-    const arrow = d3.symbol().type(d3.symbolTriangle).size(80);
-    function arrowTransform({ points }) {
-        const p     = points.slice(-2);
-        const angle = (Math.atan2(p[1][1]-p[0][1], p[1][0]-p[0][0]) * 180/Math.PI) + 90;
-        return `translate(${p[1][0]},${p[1][1]}) rotate(${angle})`;
+    // helper to look up by name
+    function getPlanByName(name) {
+        if (name === "server") return serverPlan;
+        const entry = plans.find(p => p[0] === name);
+        return entry ? entry[1] : [];
     }
-    svg.append("g").attr("id","arrows")
-        .selectAll("path")
-        .data(graph.links())
-        .join("path")
-        .attr("d", arrow)
-        .attr("transform", arrowTransform)
-        .attr("fill", d => color(d.target.data.type))
-        .attr("stroke","white")
-        .attr("stroke-width",2)
-        .attr(
-            "stroke-dasharray",
-            `${Math.sqrt((4*80)/Math.sqrt(3))},${Math.sqrt((4*80)/Math.sqrt(3))}`
-        );
+
+    // common draw routine
+    function drawDag(raw) {
+        d3.select("#svg").selectAll("*").remove();
+        const data = raw.map(d => ({
+            id:        d.id,
+            parentIds: d.inputs || [],
+            label:     d.label || d.id,
+            type:      d.node_type || "Unknown"
+        }));
+
+        const stratify = d3dag.graphStratify().id(d=>d.id).parentIds(d=>d.parentIds);
+        const graph = stratify(data);
+
+        const nodeRadius = 30;
+        const nodeSize   = [nodeRadius*2, nodeRadius*2];
+        const layout     = d3dag.sugiyama()
+            .nodeSize(nodeSize)
+            .gap([nodeRadius, nodeRadius])
+            .tweaks([d3dag.tweakShape(nodeSize, d3dag.shapeEllipse)]);
+        const { width, height } = layout(graph);
+
+        const svg = d3.select("#svg")
+            .attr("width", width+4)
+            .attr("height", height+4)
+            .append("g")
+            .attr("transform", "translate(2,2)");
+
+        const types = Array.from(new Set(data.map(d=>d.type)));
+        const color = d3.scaleOrdinal(d3.schemeCategory10).domain(types);
+
+        const defs = svg.append("defs");
+        graph.links().forEach(link => {
+            const gid = encodeURIComponent(`${link.source.data.id}--${link.target.data.id}`);
+            defs.append("linearGradient")
+                .attr("id", gid)
+                .attr("gradientUnits","userSpaceOnUse")
+                .attr("x1", link.points[0][0]).attr("y1", link.points[0][1])
+                .attr("x2", link.points.at(-1)[0]).attr("y2", link.points.at(-1)[1])
+                .call(g => {
+                    g.append("stop").attr("offset","0%").attr("stop-color", color(link.source.data.type));
+                    g.append("stop").attr("offset","100%").attr("stop-color", color(link.target.data.type));
+                });
+        });
+
+        const line = d3.line().curve(d3.curveMonotoneY);
+        svg.append("g").selectAll("path")
+            .data(graph.links()).join("path")
+            .attr("fill","none")
+            .attr("stroke-width",3)
+            .attr("stroke", d=>`url(#${encodeURIComponent(d.source.data.id+"--"+d.target.data.id)})`)
+            .attr("d", d=>line(d.points));
+
+        const nodes = svg.append("g").selectAll("g")
+            .data(graph.nodes()).join("g")
+            .attr("transform", d=>`translate(${d.x},${d.y})`);
+
+        nodes.append("circle")
+            .attr("r", nodeRadius)
+            .attr("fill", d=>color(d.data.type));
+
+        nodes.append("text")
+            .text(d=>d.data.label)
+            .attr("text-anchor","middle")
+            .attr("alignment-baseline","middle")
+            .attr("font-size",10)
+            .attr("fill","white");
+
+        const arrow = d3.symbol().type(d3.symbolTriangle).size(80);
+        function arrowTransform({ points }) {
+            const p = points.slice(-2);
+            const angle = (Math.atan2(p[1][1]-p[0][1], p[1][0]-p[0][0])*180/Math.PI) + 90;
+            return `translate(${p[1][0]},${p[1][1]}) rotate(${angle})`;
+        }
+        svg.append("g").selectAll("path")
+            .data(graph.links()).join("path")
+            .attr("d", arrow)
+            .attr("transform", arrowTransform)
+            .attr("fill", d=>color(d.target.data.type))
+            .attr("stroke","white")
+            .attr("stroke-width",2)
+            .attr("stroke-dasharray", `${Math.sqrt((4*80)/Math.sqrt(3))},${Math.sqrt((4*80)/Math.sqrt(3))}`);
+    }
+
+    // initial render
+    drawDag(getPlanByName("server"));
+
+    // on dropdown change
+    document.getElementById("plan-select")
+        .addEventListener("change", e => {
+            const sel = e.target.value;
+            const plan = getPlanByName(sel);
+            document.getElementById("raw-plan").textContent = JSON.stringify(plan, null, 2);
+            drawDag(plan);
+        });
 </script>
 {% endblock %}
