@@ -1,9 +1,40 @@
 {% block head %}
 <style>
-    html, body { height: 100%; margin: 0; }
-    body { display: flex; align-items: center; justify-content: center; flex-direction: column; overflow: hidden; }
-    #controls { margin: 1rem; }
-    svg { border: 1px solid #ccc; }
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+    }
+
+    body {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        flex-direction: column;
+    }
+
+    #controls {
+        margin: 1rem 0;
+    }
+
+    #svg-container {
+        width: 100%;
+        height: 600px;
+        border: 1px solid #ccc;
+        overflow: auto;
+    }
+
+    svg {
+        width: 100%;
+        height: 100%;
+    }
+
+    #raw-plan {
+        max-height: 200px;
+        overflow-y: auto;
+        font-size: 12px;
+    }
 </style>
 {% endblock %}
 
@@ -11,181 +42,377 @@
 <ul class="list-group mb-4">
     <li class="list-group-item list-group-item-primary">
         Raw Query Plan:
-        <pre id="raw-plan">{{ benchmark.query_plan }}</pre>
+        <pre id="raw-plan">Loading query plan...</pre>
     </li>
 </ul>
 
 <div id="controls">
     <label for="plan-select">Choose a plan:</label>
     <select id="plan-select">
-        <option value="server">Server-provided plan</option>
-        <option value="serializedLogicalPlan">Logical Plan</option>
-        <option value="serializedPhysicalPlan">Physical Plan</option>
-        <option value="serializedAlternativePlan">Alternative Plan</option>
+        <option>Loading plans...</option>
     </select>
 </div>
 
-<svg id="svg"></svg>
+<div id="svg-container">
+    <svg id="svg"></svg>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
-    // script is inspired from https://erikbrinkman.github.io/d3-dag/modules.html - Sugiyama 
-    import * as d3    from "https://cdn.skypack.dev/d3@7.8.4";
+    import * as d3 from "https://cdn.skypack.dev/d3@7.8.4";
     import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.1.0";
 
-    // 1) Server‐provided
-    const serverPlan = {{ benchmark.query_plan | tojson | safe }};
+    /**
+     * Draw a Directed Acyclic Graph (DAG) using D3.js with proper scaling
+     * @param {Array} planData - A list of nodes for the query plan
+     */
+    function drawDag(planData) {
+        try {
+            if (!Array.isArray(planData) || planData.length === 0) {
+                console.warn("Missing or empty plan data:", planData);
+                showError("Query plan data is unavailable or malformed.");
+                return;
+            }
 
-    // 2) Hard-coded examples
-    const plans = [
-        [
-            "serializedLogicalPlan",
-            [
-                { "id": "1",  "inputs": [],        "label": "Source_A",   "node_type": "Source",    "outputs": ["2", "3"] },
-                { "id": "2",  "inputs": ["1"],     "label": "Filter_A",   "node_type": "Filter",    "outputs": ["4", "5"] },
-                { "id": "3",  "inputs": ["1"],     "label": "Filter_B",   "node_type": "Filter",    "outputs": ["5"] },
-                { "id": "4",  "inputs": ["2"],     "label": "Project_A",  "node_type": "Project",   "outputs": ["6"] },
-                { "id": "5",  "inputs": ["2","3"], "label": "Join_A",     "node_type": "Join",      "outputs": ["7", "8"] },
-                { "id": "6",  "inputs": ["4"],     "label": "Aggregate_A","node_type": "Aggregate", "outputs": ["9"] },
-                { "id": "7",  "inputs": ["5"],     "label": "Sink_A",     "node_type": "Sink",      "outputs": [] },
-                { "id": "8",  "inputs": ["5"],     "label": "Project_B",  "node_type": "Project",   "outputs": ["9", "10"] },
-                { "id": "9",  "inputs": ["6","8"], "label": "Join_B",     "node_type": "Join",      "outputs": ["10"] },
-                { "id": "10", "inputs": ["8","9"], "label": "Sink_B",     "node_type": "Sink",      "outputs": [] }
-            ]
-        ],
-        [
-            "serializedPhysicalPlan",
-            [
-                { "id": "1",  "inputs": [],        "label": "TableScan",       "node_type": "TableScanExec",   "outputs": ["2", "3", "4"] },
-                { "id": "2",  "inputs": ["1"],     "label": "FilterExec_A",    "node_type": "FilterExec",       "outputs": ["5"] },
-                { "id": "3",  "inputs": ["1"],     "label": "FilterExec_B",    "node_type": "FilterExec",       "outputs": ["5", "6"] },
-                { "id": "4",  "inputs": ["1"],     "label": "ProjectExec",     "node_type": "ProjectionExec",   "outputs": ["6"] },
-                { "id": "5",  "inputs": ["2","3"], "label": "HashJoinExec",    "node_type": "HashJoinExec",     "outputs": ["7"] },
-                { "id": "6",  "inputs": ["3","4"], "label": "SortExec",        "node_type": "SortExec",         "outputs": ["7", "8"] },
-                { "id": "7",  "inputs": ["5","6"], "label": "HashAggExec",     "node_type": "HashAggregateExec","outputs": ["9"] },
-                { "id": "8",  "inputs": ["6"],     "label": "ShuffleExec",     "node_type": "ExchangeExec",     "outputs": ["9", "10"] },
-                { "id": "9",  "inputs": ["7","8"], "label": "SinkExec_A",       "node_type": "SinkExec",         "outputs": [] },
-                { "id": "10", "inputs": ["8"],     "label": "SinkExec_B",       "node_type": "SinkExec",         "outputs": [] }
-            ]
-        ],
-        [
-            "serializedAlternativePlan",
-            [
-                { "id": "1",  "inputs": [],        "label": "Source_X",   "node_type": "Source",     "outputs": ["2", "3"] },
-                { "id": "2",  "inputs": ["1"],     "label": "Scan_X",     "node_type": "Scan",       "outputs": ["4", "5"] },
-                { "id": "3",  "inputs": [],        "label": "Source_Y",   "node_type": "Source",     "outputs": ["4", "5"] },
-                { "id": "4",  "inputs": ["2","3"], "label": "Join_XY",    "node_type": "Join",       "outputs": ["6", "7"] },
-                { "id": "5",  "inputs": ["2","3"], "label": "Filter_XY",  "node_type": "Filter",     "outputs": ["7"] },
-                { "id": "6",  "inputs": ["4"],     "label": "Project_X",  "node_type": "Project",    "outputs": ["8", "9"] },
-                { "id": "7",  "inputs": ["4","5"], "label": "Aggregate_Y", "node_type": "Aggregate",  "outputs": ["9"] },
-                { "id": "8",  "inputs": ["6"],     "label": "Sink_X",     "node_type": "Sink",       "outputs": [] },
-                { "id": "9",  "inputs": ["6","7"], "label": "Sink_Y",     "node_type": "Sink",       "outputs": ["10"] },
-                { "id": "10", "inputs": ["9"],     "label": "Sink_Z",     "node_type": "Sink",       "outputs": [] }
-            ]
-        ]
-    ];
+            console.log("Drawing DAG with data:", planData);
 
-    // helper to look up by name
-    function getPlanByName(name) {
-        if (name === "server") return serverPlan;
-        const entry = plans.find(p => p[0] === name);
-        return entry ? entry[1] : [];
-    }
+            const dagNodes = planData.map(node => ({
+                id: node.id?.toString(),
+                parentIds: (node.inputs || []).map(input => input?.toString()),
+                label: node.label || "Unnamed Node",
+                type: node.node_type || "Unknown",
+            }));
 
-    // common draw routine
-    function drawDag(raw) {
-        d3.select("#svg").selectAll("*").remove();
-        const data = raw.map(d => ({
-            id:        d.id,
-            parentIds: d.inputs || [],
-            label:     d.label || d.id,
-            type:      d.node_type || "Unknown"
-        }));
+            if (!dagNodes.every(node => node.id)) {
+                console.error("Invalid node data in plan:", dagNodes);
+                showError("Invalid DAG node data in query plan.");
+                return;
+            }
 
-        const stratify = d3dag.graphStratify().id(d=>d.id).parentIds(d=>d.parentIds);
-        const graph = stratify(data);
+            // Clear existing SVG contents
+            const svg = d3.select("#svg");
+            svg.selectAll("*").remove();
 
-        const nodeRadius = 30;
-        const nodeSize   = [nodeRadius*2, nodeRadius*2];
-        const layout     = d3dag.sugiyama()
-            .nodeSize(nodeSize)
-            .gap([nodeRadius, nodeRadius])
-            .tweaks([d3dag.tweakShape(nodeSize, d3dag.shapeEllipse)]);
-        const { width, height } = layout(graph);
+            // Create a DAG
+            const stratify = d3dag.graphStratify().id(d => d.id).parentIds(d => d.parentIds);
+            const graph = stratify(dagNodes);
 
-        const svg = d3.select("#svg")
-            .attr("width", width+4)
-            .attr("height", height+4)
-            .append("g")
-            .attr("transform", "translate(2,2)");
+            // Configure layout with better spacing
+            const nodeWidth = 180;
+            const nodeHeight = 80;
+            const layout = d3dag.sugiyama()
+                .nodeSize([nodeWidth, nodeHeight])
+                .layering(d3dag.layeringSimplex())
+                .decross(d3dag.decrossOpt())
+                .coord(d3dag.coordVert());
 
-        const types = Array.from(new Set(data.map(d=>d.type)));
-        const color = d3.scaleOrdinal(d3.schemeCategory10).domain(types);
+            const { width, height } = layout(graph);
 
-        const defs = svg.append("defs");
-        graph.links().forEach(link => {
-            const gid = encodeURIComponent(`${link.source.data.id}--${link.target.data.id}`);
-            defs.append("linearGradient")
-                .attr("id", gid)
-                .attr("gradientUnits","userSpaceOnUse")
-                .attr("x1", link.points[0][0]).attr("y1", link.points[0][1])
-                .attr("x2", link.points.at(-1)[0]).attr("y2", link.points.at(-1)[1])
-                .call(g => {
-                    g.append("stop").attr("offset","0%").attr("stop-color", color(link.source.data.type));
-                    g.append("stop").attr("offset","100%").attr("stop-color", color(link.target.data.type));
+            // Add padding
+            const padding = 40;
+            const totalWidth = width + (2 * padding);
+            const totalHeight = height + (2 * padding);
+
+            // Set SVG dimensions and viewBox
+            svg
+                .attr("viewBox", `0 0 ${totalWidth} ${totalHeight}`)
+                .attr("preserveAspectRatio", "xMidYMid meet")
+                .attr("width", totalWidth)
+                .attr("height", totalHeight);
+
+            const container = svg.append("g")
+                .attr("transform", `translate(${padding}, ${padding})`);
+
+            // Add links (edges)
+            container.append("g")
+                .selectAll("path")
+                .data(graph.links())
+                .enter()
+                .append("path")
+                .attr("d", d => {
+                    const line = d3.line()
+                        .x(d => d[0])
+                        .y(d => d[1])
+                        .curve(d3.curveMonotoneY);
+                    return line(d.points);
+                })
+                .attr("fill", "none")
+                .attr("stroke", "#666")
+                .attr("stroke-width", 2)
+                .attr("marker-end", "url(#arrowhead)");
+
+            // Add arrowhead marker
+            const defs = svg.append("defs");
+            defs.append("marker")
+                .attr("id", "arrowhead")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 8)
+                .attr("refY", 0)
+                .attr("orient", "auto")
+                .attr("markerWidth", 6)
+                .attr("markerHeight", 6)
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#666");
+
+            // Add nodes
+            const nodes = container.append("g")
+                .selectAll("g")
+                .data(graph.nodes())
+                .enter()
+                .append("g")
+                .attr("transform", d => `translate(${d.x}, ${d.y})`);
+
+            // Add node rectangles
+            nodes.append("rect")
+                .attr("x", -nodeWidth/2)
+                .attr("y", -nodeHeight/2)
+                .attr("width", nodeWidth)
+                .attr("height", nodeHeight)
+                .attr("rx", 8)
+                .attr("ry", 8)
+                .attr("fill", d => getNodeColor(d.data.type))
+                .attr("stroke", "#333")
+                .attr("stroke-width", 2);
+
+            // Add node type labels (smaller, at the top)
+            nodes.append("text")
+                .text(d => d.data.type)
+                .attr("text-anchor", "middle")
+                .attr("dy", -15)
+                .style("fill", "#fff")
+                .style("font-size", "12px")
+                .style("font-weight", "bold");
+
+            // Add main node labels (larger, split into multiple lines if needed)
+            nodes.each(function(d) {
+                const node = d3.select(this);
+                const label = d.data.label;
+                const words = label.split(/[\s\(\)]+/).filter(w => w.length > 0);
+
+                // Split into lines
+                const lines = [];
+                let currentLine = "";
+                const maxCharsPerLine = 20;
+
+                for (const word of words) {
+                    if ((currentLine + " " + word).length <= maxCharsPerLine) {
+                        currentLine = currentLine ? currentLine + " " + word : word;
+                    } else {
+                        if (currentLine) lines.push(currentLine);
+                        currentLine = word;
+                    }
+                }
+                if (currentLine) lines.push(currentLine);
+
+                // Limit to 3 lines max
+                const displayLines = lines.slice(0, 3);
+                if (lines.length > 3) {
+                    displayLines[2] = displayLines[2] + "...";
+                }
+
+                // Add text lines
+                displayLines.forEach((line, i) => {
+                    node.append("text")
+                        .text(line)
+                        .attr("text-anchor", "middle")
+                        .attr("dy", (i - (displayLines.length - 1) / 2) * 14 + 5)
+                        .style("fill", "#fff")
+                        .style("font-size", "11px");
                 });
-        });
+            });
 
-        const line = d3.line().curve(d3.curveMonotoneY);
-        svg.append("g").selectAll("path")
-            .data(graph.links()).join("path")
-            .attr("fill","none")
-            .attr("stroke-width",3)
-            .attr("stroke", d=>`url(#${encodeURIComponent(d.source.data.id+"--"+d.target.data.id)})`)
-            .attr("d", d=>line(d.points));
+            console.log(`DAG rendered with dimensions: ${totalWidth}x${totalHeight}`);
 
-        const nodes = svg.append("g").selectAll("g")
-            .data(graph.nodes()).join("g")
-            .attr("transform", d=>`translate(${d.x},${d.y})`);
-
-        nodes.append("circle")
-            .attr("r", nodeRadius)
-            .attr("fill", d=>color(d.data.type));
-
-        nodes.append("text")
-            .text(d=>d.data.label)
-            .attr("text-anchor","middle")
-            .attr("alignment-baseline","middle")
-            .attr("font-size",10)
-            .attr("fill","white");
-
-        const arrow = d3.symbol().type(d3.symbolTriangle).size(80);
-        function arrowTransform({ points }) {
-            const p = points.slice(-2);
-            const angle = (Math.atan2(p[1][1]-p[0][1], p[1][0]-p[0][0])*180/Math.PI) + 90;
-            return `translate(${p[1][0]},${p[1][1]}) rotate(${angle})`;
+        } catch (error) {
+            console.error("Error drawing DAG:", error);
+            showError("An error occurred while rendering the query plan.");
         }
-        svg.append("g").selectAll("path")
-            .data(graph.links()).join("path")
-            .attr("d", arrow)
-            .attr("transform", arrowTransform)
-            .attr("fill", d=>color(d.target.data.type))
-            .attr("stroke","white")
-            .attr("stroke-width",2)
-            .attr("stroke-dasharray", `${Math.sqrt((4*80)/Math.sqrt(3))},${Math.sqrt((4*80)/Math.sqrt(3))}`);
     }
 
-    // initial render
-    drawDag(getPlanByName("server"));
+    /**
+     * Get color for node based on type
+     */
+    function getNodeColor(nodeType) {
+        const colors = {
+            'Source': '#2E8B57',      // Sea Green
+            'Sink': '#DC143C',        // Crimson
+            'Selection': '#4169E1',   // Royal Blue
+            'Filter': '#4169E1',      // Royal Blue (alias for Selection)
+            'WindowedAggregation': '#FF8C00', // Dark Orange
+            'EventTimeWatermarkAssigner': '#9932CC', // Dark Orchid
+            'Unknown': '#708090'      // Slate Gray
+        };
+        return colors[nodeType] || colors['Unknown'];
+    }
 
-    // on dropdown change
-    document.getElementById("plan-select")
-        .addEventListener("change", e => {
-            const sel = e.target.value;
-            const plan = getPlanByName(sel);
-            document.getElementById("raw-plan").textContent = JSON.stringify(plan, null, 2);
-            drawDag(plan);
+    function showError(message) {
+        document.getElementById("raw-plan").textContent = `Error: ${message}`;
+        console.error(message);
+    }
+
+    /**
+     * Get the benchmark result ID from the current URL
+     */
+    function getBenchmarkIdFromUrl() {
+        const pathParts = window.location.pathname.split('/');
+        const benchmarkResultIndex = pathParts.indexOf('benchmark-results');
+        if (benchmarkResultIndex !== -1 && pathParts[benchmarkResultIndex + 1]) {
+            return pathParts[benchmarkResultIndex + 1];
+        }
+        return null;
+    }
+
+    /**
+     * Fetch benchmark data from the API using the current benchmark ID
+     */
+    async function loadCurrentBenchmarkPlan() {
+        try {
+            const benchmarkId = getBenchmarkIdFromUrl();
+            if (!benchmarkId) {
+                throw new Error("Could not extract benchmark ID from URL");
+            }
+
+            console.log("Loading benchmark with ID:", benchmarkId);
+
+            // Fetch the specific benchmark result
+            const response = await fetch(`/api/benchmarks/${benchmarkId}/`);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch benchmark: HTTP ${response.status}`);
+            }
+
+            const benchmarkData = await response.json();
+            console.log("Benchmark data:", benchmarkData);
+
+            // Check if this benchmark has query plan data
+            if (!benchmarkData.query_plan || !benchmarkData.query_plan.length) {
+                throw new Error("This benchmark result does not contain query plan data");
+            }
+
+            // Extract the serialized logical plan
+            const serializedLogicalPlan = benchmarkData.query_plan[0][1];
+
+            // Display the plan
+            populateSinglePlan(benchmarkData, serializedLogicalPlan);
+
+        } catch (error) {
+            console.error("Failed to load benchmark plan:", error);
+            showError(`Unable to load query plan: ${error.message}`);
+        }
+    }
+
+    /**
+     * Try to load all benchmarks from the same run, but fall back gracefully
+     */
+    async function loadAllPlansFromSameRun() {
+        try {
+            const benchmarkId = getBenchmarkIdFromUrl();
+            if (!benchmarkId) {
+                throw new Error("Could not extract benchmark ID from URL");
+            }
+
+            // First, get the current benchmark to find its run_id
+            const currentBenchmarkResponse = await fetch(`/api/benchmarks/${benchmarkId}/`);
+            if (!currentBenchmarkResponse.ok) {
+                throw new Error(`Failed to fetch current benchmark: HTTP ${currentBenchmarkResponse.status}`);
+            }
+
+            const currentBenchmark = await currentBenchmarkResponse.json();
+            const runId = currentBenchmark.run_id;
+
+            console.log("Found run_id:", runId);
+
+            // Try to fetch all benchmarks from this run - but catch server errors
+            try {
+                const allBenchmarksResponse = await fetch(`/api/benchmarks/?run_id=${runId}`);
+                if (!allBenchmarksResponse.ok) {
+                    throw new Error(`Server error ${allBenchmarksResponse.status} - falling back to single benchmark`);
+                }
+
+                const allBenchmarksData = await allBenchmarksResponse.json();
+                const benchmarks = allBenchmarksData.data || [];
+
+                // Filter benchmarks that have query plans
+                const benchmarksWithPlans = benchmarks.filter(benchmark =>
+                    benchmark.query_plan && benchmark.query_plan.length > 0
+                );
+
+                if (benchmarksWithPlans.length > 1) {
+                    console.log(`Found ${benchmarksWithPlans.length} benchmarks with query plans`);
+                    populateMultiplePlans(benchmarksWithPlans, benchmarkId);
+                    return;
+                }
+            } catch (fetchError) {
+                console.warn("Failed to fetch multiple benchmarks:", fetchError);
+            }
+
+            // Fall back to single benchmark
+            const serializedLogicalPlan = currentBenchmark.query_plan[0][1];
+            populateSinglePlan(currentBenchmark, serializedLogicalPlan);
+
+        } catch (error) {
+            console.error("Failed to load run plans:", error);
+            showError(`Unable to load query plan: ${error.message}`);
+        }
+    }
+
+    /**
+     * Display a single plan (fallback)
+     */
+    function populateSinglePlan(benchmarkData, serializedLogicalPlan) {
+        const planSelect = document.getElementById("plan-select");
+        planSelect.innerHTML = "";
+
+        const option = document.createElement("option");
+        option.value = 0;
+        option.textContent = benchmarkData.tags?.name || "Query Plan";
+        planSelect.appendChild(option);
+
+        // Display the plan
+        drawDag(serializedLogicalPlan);
+        document.getElementById("raw-plan").textContent = JSON.stringify(serializedLogicalPlan, null, 2);
+    }
+
+    /**
+     * Display multiple plans with dropdown selection
+     */
+    function populateMultiplePlans(benchmarksWithPlans, currentBenchmarkId) {
+        const planSelect = document.getElementById("plan-select");
+        planSelect.innerHTML = "";
+
+        let defaultIndex = 0;
+
+        benchmarksWithPlans.forEach((benchmark, index) => {
+            const option = document.createElement("option");
+            option.value = index;
+            option.textContent = benchmark.tags?.name || `Plan ${index + 1}`;
+            planSelect.appendChild(option);
+
+            // Set the current benchmark as default
+            if (benchmark.id === currentBenchmarkId) {
+                defaultIndex = index;
+            }
         });
+
+        // Set the default selection
+        planSelect.value = defaultIndex;
+
+        // Display the default plan
+        const defaultPlan = benchmarksWithPlans[defaultIndex].query_plan[0][1];
+        drawDag(defaultPlan);
+        document.getElementById("raw-plan").textContent = JSON.stringify(defaultPlan, null, 2);
+
+        // Add event listener for dropdown selection
+        planSelect.addEventListener("change", function (event) {
+            const selectedIndex = parseInt(event.target.value, 10);
+            const selectedPlan = benchmarksWithPlans[selectedIndex].query_plan[0][1];
+            drawDag(selectedPlan);
+            document.getElementById("raw-plan").textContent = JSON.stringify(selectedPlan, null, 2);
+        });
+    }
+
+    // Initialize the application
+    loadAllPlansFromSameRun();
 </script>
 {% endblock %}
