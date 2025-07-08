@@ -64,355 +64,156 @@
     import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.1.0";
 
     /**
-     * Draw a Directed Acyclic Graph (DAG) using D3.js with proper scaling
-     * @param {Array} planData - A list of nodes for the query plan
+     * Draws the Directed Acyclic Graph (DAG) for a specific query plan.
+     * @param {Array} planData - The data for the query plan.
      */
     function drawDag(planData) {
         try {
             if (!Array.isArray(planData) || planData.length === 0) {
-                console.warn("Missing or empty plan data:", planData);
-                showError("Query plan data is unavailable or malformed.");
+                console.error("Invalid plan data provided:", planData);
                 return;
             }
 
-            console.log("Drawing DAG with data:", planData);
-
+            // Format DAG nodes
             const dagNodes = planData.map(node => ({
-                id: node.id?.toString(),
-                parentIds: (node.inputs || []).map(input => input?.toString()),
-                label: node.label || "Unnamed Node",
+                id: node.id.toString(),
+                parentIds: (node.inputs || []).map(input => input.toString()),
+                label: node.label || "Unnamed",
                 type: node.node_type || "Unknown",
             }));
 
             if (!dagNodes.every(node => node.id)) {
-                console.error("Invalid node data in plan:", dagNodes);
-                showError("Invalid DAG node data in query plan.");
+                console.error("Invalid DAG node data:", dagNodes);
                 return;
             }
 
-            // Clear existing SVG contents
+            // Clear existing SVG
             const svg = d3.select("#svg");
             svg.selectAll("*").remove();
 
-            // Create a DAG
-            const stratify = d3dag.graphStratify().id(d => d.id).parentIds(d => d.parentIds);
+            // Build the DAG
+            const stratify = d3dag.graphStratify()
+                .id(d => d.id)
+                .parentIds(d => d.parentIds);
             const graph = stratify(dagNodes);
 
-            // Configure layout with better spacing
-            const nodeWidth = 180;
-            const nodeHeight = 80;
+            // Layout configuration
             const layout = d3dag.sugiyama()
-                .nodeSize([nodeWidth, nodeHeight])
-                .layering(d3dag.layeringSimplex())
-                .decross(d3dag.decrossOpt())
-                .coord(d3dag.coordVert());
-
+                .nodeSize([200, 100]) // Node width and height
+                .coord(d3dag.coordCenter()); // Use center coordinates
             const { width, height } = layout(graph);
 
-            // Add padding
-            const padding = 40;
-            const totalWidth = width + (2 * padding);
-            const totalHeight = height + (2 * padding);
+            const svgContainer = svg
+                .attr("viewBox", `0 0 ${width + 100} ${height + 100}`)
+                .attr("preserveAspectRatio", "xMidYMid meet");
 
-            // Set SVG dimensions and viewBox
-            svg
-                .attr("viewBox", `0 0 ${totalWidth} ${totalHeight}`)
-                .attr("preserveAspectRatio", "xMidYMid meet")
-                .attr("width", totalWidth)
-                .attr("height", totalHeight);
+            const container = svgContainer.append("g").attr("transform", "translate(50,50)");
 
-            const container = svg.append("g")
-                .attr("transform", `translate(${padding}, ${padding})`);
-
-            // Add links (edges)
+            // Define link paths
+            const line = d3.line().curve(d3.curveMonotoneY);
             container.append("g")
                 .selectAll("path")
                 .data(graph.links())
-                .enter()
-                .append("path")
-                .attr("d", d => {
-                    const line = d3.line()
-                        .x(d => d[0])
-                        .y(d => d[1])
-                        .curve(d3.curveMonotoneY);
-                    return line(d.points);
-                })
+                .join("path")
+                .attr("d", d => line(d.points))
                 .attr("fill", "none")
-                .attr("stroke", "#666")
-                .attr("stroke-width", 2)
-                .attr("marker-end", "url(#arrowhead)");
+                .attr("stroke", "#ccc")
+                .attr("stroke-width", 2);
 
-            // Add arrowhead marker
-            const defs = svg.append("defs");
-            defs.append("marker")
-                .attr("id", "arrowhead")
-                .attr("viewBox", "0 -5 10 10")
-                .attr("refX", 8)
-                .attr("refY", 0)
-                .attr("orient", "auto")
-                .attr("markerWidth", 6)
-                .attr("markerHeight", 6)
-                .append("path")
-                .attr("d", "M0,-5L10,0L0,5")
-                .attr("fill", "#666");
-
-            // Add nodes
+            // Define nodes
             const nodes = container.append("g")
                 .selectAll("g")
                 .data(graph.nodes())
-                .enter()
-                .append("g")
-                .attr("transform", d => `translate(${d.x}, ${d.y})`);
+                .join("g")
+                .attr("transform", d => `translate(${d.x},${d.y})`);
 
-            // Add node rectangles
-            nodes.append("rect")
-                .attr("x", -nodeWidth/2)
-                .attr("y", -nodeHeight/2)
-                .attr("width", nodeWidth)
-                .attr("height", nodeHeight)
-                .attr("rx", 8)
-                .attr("ry", 8)
-                .attr("fill", d => getNodeColor(d.data.type))
-                .attr("stroke", "#333")
-                .attr("stroke-width", 2);
+            nodes.append("circle")
+                .attr("r", 40)
+                .attr("fill", d => getNodeColor(d.data.type));
 
-            // Add node type labels (smaller, at the top)
             nodes.append("text")
-                .text(d => d.data.type)
+                .text(d => d.data.label)
                 .attr("text-anchor", "middle")
-                .attr("dy", -15)
-                .style("fill", "#fff")
-                .style("font-size", "12px")
-                .style("font-weight", "bold");
-
-            // Add main node labels (larger, split into multiple lines if needed)
-            nodes.each(function(d) {
-                const node = d3.select(this);
-                const label = d.data.label;
-                const words = label.split(/[\s\(\)]+/).filter(w => w.length > 0);
-
-                // Split into lines
-                const lines = [];
-                let currentLine = "";
-                const maxCharsPerLine = 20;
-
-                for (const word of words) {
-                    if ((currentLine + " " + word).length <= maxCharsPerLine) {
-                        currentLine = currentLine ? currentLine + " " + word : word;
-                    } else {
-                        if (currentLine) lines.push(currentLine);
-                        currentLine = word;
-                    }
-                }
-                if (currentLine) lines.push(currentLine);
-
-                // Limit to 3 lines max
-                const displayLines = lines.slice(0, 3);
-                if (lines.length > 3) {
-                    displayLines[2] = displayLines[2] + "...";
-                }
-
-                // Add text lines
-                displayLines.forEach((line, i) => {
-                    node.append("text")
-                        .text(line)
-                        .attr("text-anchor", "middle")
-                        .attr("dy", (i - (displayLines.length - 1) / 2) * 14 + 5)
-                        .style("fill", "#fff")
-                        .style("font-size", "11px");
-                });
-            });
-
-            console.log(`DAG rendered with dimensions: ${totalWidth}x${totalHeight}`);
+                .attr("dy", 4)
+                .attr("fill", "white")
+                .attr("font-size", 12);
 
         } catch (error) {
             console.error("Error drawing DAG:", error);
-            showError("An error occurred while rendering the query plan.");
         }
     }
 
     /**
-     * Get color for node based on type
+     * Fetches and populates selectable plans within the dropdown.
+     * @param {Array} plans - Array of available benchmark plans.
      */
-    function getNodeColor(nodeType) {
-        const colors = {
-            'Source': '#2E8B57',      // Sea Green
-            'Sink': '#DC143C',        // Crimson
-            'Selection': '#4169E1',   // Royal Blue
-            'Filter': '#4169E1',      // Royal Blue (alias for Selection)
-            'WindowedAggregation': '#FF8C00', // Dark Orange
-            'EventTimeWatermarkAssigner': '#9932CC', // Dark Orchid
-            'Unknown': '#708090'      // Slate Gray
-        };
-        return colors[nodeType] || colors['Unknown'];
-    }
+    function populatePlanSelector(plans) {
+        const selector = document.getElementById("plan-select");
+        selector.innerHTML = ""; // Clear existing options
 
-    function showError(message) {
-        document.getElementById("raw-plan").textContent = `Error: ${message}`;
-        console.error(message);
-    }
-
-    /**
-     * Get the benchmark result ID from the current URL
-     */
-    function getBenchmarkIdFromUrl() {
-        const pathParts = window.location.pathname.split('/');
-        const benchmarkResultIndex = pathParts.indexOf('benchmark-results');
-        if (benchmarkResultIndex !== -1 && pathParts[benchmarkResultIndex + 1]) {
-            return pathParts[benchmarkResultIndex + 1];
-        }
-        return null;
-    }
-
-    /**
-     * Fetch benchmark data from the API using the current benchmark ID
-     */
-    async function loadCurrentBenchmarkPlan() {
-        try {
-            const benchmarkId = getBenchmarkIdFromUrl();
-            if (!benchmarkId) {
-                throw new Error("Could not extract benchmark ID from URL");
-            }
-
-            console.log("Loading benchmark with ID:", benchmarkId);
-
-            // Fetch the specific benchmark result
-            const response = await fetch(`/api/benchmarks/${benchmarkId}/`);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch benchmark: HTTP ${response.status}`);
-            }
-
-            const benchmarkData = await response.json();
-            console.log("Benchmark data:", benchmarkData);
-
-            // Check if this benchmark has query plan data
-            if (!benchmarkData.query_plan || !benchmarkData.query_plan.length) {
-                throw new Error("This benchmark result does not contain query plan data");
-            }
-
-            // Extract the serialized logical plan
-            const serializedLogicalPlan = benchmarkData.query_plan[0][1];
-
-            // Display the plan
-            populateSinglePlan(benchmarkData, serializedLogicalPlan);
-
-        } catch (error) {
-            console.error("Failed to load benchmark plan:", error);
-            showError(`Unable to load query plan: ${error.message}`);
-        }
-    }
-
-    /**
-     * Try to load all benchmarks from the same run, but fall back gracefully
-     */
-    async function loadAllPlansFromSameRun() {
-        try {
-            const benchmarkId = getBenchmarkIdFromUrl();
-            if (!benchmarkId) {
-                throw new Error("Could not extract benchmark ID from URL");
-            }
-
-            // First, get the current benchmark to find its run_id
-            const currentBenchmarkResponse = await fetch(`/api/benchmarks/${benchmarkId}/`);
-            if (!currentBenchmarkResponse.ok) {
-                throw new Error(`Failed to fetch current benchmark: HTTP ${currentBenchmarkResponse.status}`);
-            }
-
-            const currentBenchmark = await currentBenchmarkResponse.json();
-            const runId = currentBenchmark.run_id;
-
-            console.log("Found run_id:", runId);
-
-            // Try to fetch all benchmarks from this run - but catch server errors
-            try {
-                const allBenchmarksResponse = await fetch(`/api/benchmarks/?run_id=${runId}`);
-                if (!allBenchmarksResponse.ok) {
-                    throw new Error(`Server error ${allBenchmarksResponse.status} - falling back to single benchmark`);
-                }
-
-                const allBenchmarksData = await allBenchmarksResponse.json();
-                const benchmarks = allBenchmarksData.data || [];
-
-                // Filter benchmarks that have query plans
-                const benchmarksWithPlans = benchmarks.filter(benchmark =>
-                    benchmark.query_plan && benchmark.query_plan.length > 0
-                );
-
-                if (benchmarksWithPlans.length > 1) {
-                    console.log(`Found ${benchmarksWithPlans.length} benchmarks with query plans`);
-                    populateMultiplePlans(benchmarksWithPlans, benchmarkId);
-                    return;
-                }
-            } catch (fetchError) {
-                console.warn("Failed to fetch multiple benchmarks:", fetchError);
-            }
-
-            // Fall back to single benchmark
-            const serializedLogicalPlan = currentBenchmark.query_plan[0][1];
-            populateSinglePlan(currentBenchmark, serializedLogicalPlan);
-
-        } catch (error) {
-            console.error("Failed to load run plans:", error);
-            showError(`Unable to load query plan: ${error.message}`);
-        }
-    }
-
-    /**
-     * Display a single plan (fallback)
-     */
-    function populateSinglePlan(benchmarkData, serializedLogicalPlan) {
-        const planSelect = document.getElementById("plan-select");
-        planSelect.innerHTML = "";
-
-        const option = document.createElement("option");
-        option.value = 0;
-        option.textContent = benchmarkData.tags?.name || "Query Plan";
-        planSelect.appendChild(option);
-
-        // Display the plan
-        drawDag(serializedLogicalPlan);
-        document.getElementById("raw-plan").textContent = JSON.stringify(serializedLogicalPlan, null, 2);
-    }
-
-    /**
-     * Display multiple plans with dropdown selection
-     */
-    function populateMultiplePlans(benchmarksWithPlans, currentBenchmarkId) {
-        const planSelect = document.getElementById("plan-select");
-        planSelect.innerHTML = "";
-
-        let defaultIndex = 0;
-
-        benchmarksWithPlans.forEach((benchmark, index) => {
+        plans.forEach((plan, index) => {
             const option = document.createElement("option");
             option.value = index;
-            option.textContent = benchmark.tags?.name || `Plan ${index + 1}`;
-            planSelect.appendChild(option);
-
-            // Set the current benchmark as default
-            if (benchmark.id === currentBenchmarkId) {
-                defaultIndex = index;
-            }
+            option.textContent = plan.name || `Plan ${index + 1}`;
+            selector.appendChild(option);
         });
 
-        // Set the default selection
-        planSelect.value = defaultIndex;
-
-        // Display the default plan
-        const defaultPlan = benchmarksWithPlans[defaultIndex].query_plan[0][1];
-        drawDag(defaultPlan);
-        document.getElementById("raw-plan").textContent = JSON.stringify(defaultPlan, null, 2);
-
-        // Add event listener for dropdown selection
-        planSelect.addEventListener("change", function (event) {
-            const selectedIndex = parseInt(event.target.value, 10);
-            const selectedPlan = benchmarksWithPlans[selectedIndex].query_plan[0][1];
+        // Handle plan selection
+        selector.addEventListener("change", () => {
+            const selectedIndex = parseInt(selector.value, 10);
+            const selectedPlan = plans[selectedIndex].query_plan;
             drawDag(selectedPlan);
             document.getElementById("raw-plan").textContent = JSON.stringify(selectedPlan, null, 2);
         });
+
+        // Render the first plan by default
+        if (plans.length > 0) {
+            drawDag(plans[0].query_plan);
+            document.getElementById("raw-plan").textContent = JSON.stringify(plans[0].query_plan, null, 2);
+        }
     }
 
-    // Initialize the application
-    loadAllPlansFromSameRun();
+    /**
+     * Loads plans and initializes the application.
+     */
+    async function init() {
+        try {
+            const response = await fetch(`/api/benchmarks/`);
+            if (!response.ok) throw new Error(`Failed to fetch plans: ${response.status}`);
+
+            const data = await response.json();
+            const plans = data.results.map(benchmark => {
+                return {
+                    name: benchmark.tags?.name,
+                    query_plan: benchmark.query_plan[0][1], // Extract desired plan
+                };
+            });
+
+            populatePlanSelector(plans);
+        } catch (error) {
+            console.error("Error initializing the application:", error);
+        }
+    }
+
+    /**
+     * Get color for the node based on its type.
+     * @param {String} nodeType - Data node type.
+     * @returns {String} Color hex value.
+     */
+    function getNodeColor(nodeType) {
+        const colors = {
+            "Source": "#2e8b57",
+            "Sink": "#dc143c",
+            "Selection": "#4682b4",
+            "Filter": "#4682b4", // Alias
+            "WindowedAggregation": "#ffa500",
+            "EventTimeWatermarkAssigner": "#ba55d3",
+            "Unknown": "#708090",
+        };
+        return colors[nodeType] || "#708090"; // Default color
+    }
+
+    // Initialize on page load
+    document.addEventListener("DOMContentLoaded", init);
 </script>
 {% endblock %}
