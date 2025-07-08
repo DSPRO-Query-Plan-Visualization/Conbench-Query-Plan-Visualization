@@ -14,10 +14,6 @@
         flex-direction: column;
     }
 
-    #controls {
-        margin: 1rem 0;
-    }
-
     #svg-container {
         width: 100%;
         height: 600px;
@@ -46,13 +42,6 @@
     </li>
 </ul>
 
-<div id="controls">
-    <label for="plan-select">Choose a plan:</label>
-    <select id="plan-select">
-        <option>Loading plans...</option>
-    </select>
-</div>
-
 <div id="svg-container">
     <svg id="svg"></svg>
 </div>
@@ -70,20 +59,20 @@
     function drawDag(planData) {
         try {
             if (!Array.isArray(planData) || planData.length === 0) {
-                console.error("Invalid plan data provided:", planData);
+                console.error("No valid plan data found:", planData);
                 return;
             }
 
-            // Format DAG nodes
+            // Prepare nodes and edges
             const dagNodes = planData.map(node => ({
                 id: node.id.toString(),
-                parentIds: (node.inputs || []).map(input => input.toString()),
+                parentIds: (node.inputs || []).map(i => i.toString()),
                 label: node.label || "Unnamed",
                 type: node.node_type || "Unknown",
             }));
 
             if (!dagNodes.every(node => node.id)) {
-                console.error("Invalid DAG node data:", dagNodes);
+                console.error("Invalid node data encountered:", dagNodes);
                 return;
             }
 
@@ -91,16 +80,16 @@
             const svg = d3.select("#svg");
             svg.selectAll("*").remove();
 
-            // Build the DAG
+            // Create the DAG
             const stratify = d3dag.graphStratify()
                 .id(d => d.id)
                 .parentIds(d => d.parentIds);
             const graph = stratify(dagNodes);
 
-            // Layout configuration
+            // Configure layout
             const layout = d3dag.sugiyama()
-                .nodeSize([20, 10]) // Node width and height
-                .coord(d3dag.coordCenter()); // Use center coordinates
+                .nodeSize([40, 20])
+                .coord(d3dag.coordCenter());
             const { width, height } = layout(graph);
 
             const svgContainer = svg
@@ -109,7 +98,7 @@
 
             const container = svgContainer.append("g").attr("transform", "translate(50,50)");
 
-            // Define link paths
+            // Draw edges
             const line = d3.line().curve(d3.curveMonotoneY);
             container.append("g")
                 .selectAll("path")
@@ -117,10 +106,10 @@
                 .join("path")
                 .attr("d", d => line(d.points))
                 .attr("fill", "none")
-                .attr("stroke", "#ccc")
+                .attr("stroke", "#aaa")
                 .attr("stroke-width", 2);
 
-            // Define nodes
+            // Draw nodes
             const nodes = container.append("g")
                 .selectAll("g")
                 .data(graph.nodes())
@@ -128,92 +117,59 @@
                 .attr("transform", d => `translate(${d.x},${d.y})`);
 
             nodes.append("circle")
-                .attr("r", 40)
+                .attr("r", 30)
                 .attr("fill", d => getNodeColor(d.data.type));
 
             nodes.append("text")
                 .text(d => d.data.label)
                 .attr("text-anchor", "middle")
                 .attr("dy", 4)
-                .attr("fill", "white")
-                .attr("font-size", 12);
-
+                .attr("font-size", 12)
+                .attr("fill", "white");
         } catch (error) {
-            console.error("Error drawing DAG:", error);
+            console.error("Error rendering the DAG:", error);
         }
     }
 
     /**
-     * Fetches and populates selectable plans within the dropdown.
-     * @param {Array} plans - Array of available benchmark plans.
+     * Fetches and visualizes the current plan automatically.
      */
-    function populatePlanSelector(plans) {
-        const selector = document.getElementById("plan-select");
-        selector.innerHTML = ""; // Clear existing options
-
-        plans.forEach((plan, index) => {
-            const option = document.createElement("option");
-            option.value = index;
-            option.textContent = plan.name || `Plan ${index + 1}`;
-            selector.appendChild(option);
-        });
-
-        // Handle plan selection
-        selector.addEventListener("change", () => {
-            const selectedIndex = parseInt(selector.value, 10);
-            const selectedPlan = plans[selectedIndex].query_plan;
-            drawDag(selectedPlan);
-            document.getElementById("raw-plan").textContent = JSON.stringify(selectedPlan, null, 2);
-        });
-
-        // Render the first plan by default
-        if (plans.length > 0) {
-            drawDag(plans[0].query_plan);
-            document.getElementById("raw-plan").textContent = JSON.stringify(plans[0].query_plan, null, 2);
-        }
-    }
-
-    /**
-     * Loads plans and initializes the application.
-     */
-    async function init() {
+    async function initVisualization() {
         try {
-            const response = await fetch(`/api/benchmarks/`);
-            if (!response.ok) throw new Error(`Failed to fetch plans: ${response.status}`);
+            const response = await fetch(`/api/query-plan-data`);
+            if (!response.ok) throw new Error(`Failed to fetch plan: ${response.statusText}`);
 
             const data = await response.json();
-            const plans = data.results.map(benchmark => {
-                return {
-                    name: benchmark.tags?.name,
-                    query_plan: benchmark.query_plan[0][1], // Extract desired plan
-                };
-            });
-
-            populatePlanSelector(plans);
+            if (data.results && data.results.length > 0) {
+                const currentPlan = data.results[0].serializedLogicalPlan;
+                drawDag(currentPlan);
+                document.getElementById("raw-plan").textContent = JSON.stringify(currentPlan, null, 2);
+            } else {
+                alert("No query plan found for the current run.");
+            }
         } catch (error) {
-            console.error("Error initializing the application:", error);
+            console.error("Error fetching query plan:", error);
+            alert("Failed to fetch query plan. Check the console for details.");
         }
     }
 
     /**
-     * Get color for the node based on its type.
-     * @param {String} nodeType - Data node type.
-     * @returns {String} Color hex value.
+     * Get node color based on its type.
      */
     function getNodeColor(nodeType) {
         const colors = {
             "Source": "#2e8b57",
             "Sink": "#dc143c",
             "Selection": "#4682b4",
-            "Filter": "#4682b4", // Alias
+            "Filter": "#4682b4",
             "WindowedAggregation": "#ffa500",
             "EventTimeWatermarkAssigner": "#ba55d3",
             "Unknown": "#708090",
         };
-        return colors[nodeType] || "#708090"; // Default color
+        return colors[nodeType] || "#708090";
     }
 
-    // Initialize on page load
-    document.addEventListener("DOMContentLoaded", init);
+    // Initialize visualization on page load
+    document.addEventListener("DOMContentLoaded", initVisualization);
 </script>
 {% endblock %}
