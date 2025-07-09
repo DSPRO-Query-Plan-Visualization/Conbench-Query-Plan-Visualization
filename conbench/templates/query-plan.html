@@ -54,44 +54,49 @@
 
     /**
      * Draws the Directed Acyclic Graph (DAG) for a specific query plan.
-     * @param {Array} planData - The data for the query plan.
+     * @param {Array} queryPlan - The raw query plan data from the server.
      */
-    function drawDag(planData) {
+    function drawDag(queryPlan) {
         try {
+            // Extract the nodes (queried as serializedLogicalPlan)
+            const planData = queryPlan?.find(([planType]) => planType === "serializedLogicalPlan")?.[1];
+
             if (!Array.isArray(planData) || planData.length === 0) {
-                console.error("No valid plan data found:", planData);
+                console.error("No valid serializedLogicalPlan data found:", planData);
                 return;
             }
 
-            // Prepare nodes and edges
+            // Map to DAG-compatible nodes
             const dagNodes = planData.map(node => ({
-                id: node.id.toString(),
-                parentIds: (node.inputs || []).map(i => i.toString()),
-                label: node.label || "Unnamed",
+                id: node.id?.toString(), // Ensure the ID is a string
+                parentIds: (node.inputs || []).map(input => input.toString()), // Convert inputs to strings
+                label: node.label || "Unnamed Node",
                 type: node.node_type || "Unknown",
             }));
 
+            // Validate all nodes have unique and defined IDs
             if (!dagNodes.every(node => node.id)) {
-                console.error("Invalid node data encountered:", dagNodes);
-                return;
+                throw new Error("One or more nodes are missing valid 'id' properties.");
             }
 
-            // Clear existing SVG
+            // Clear previous SVG content
             const svg = d3.select("#svg");
             svg.selectAll("*").remove();
 
-            // Create the DAG
+            // Build the DAG structure
             const stratify = d3dag.graphStratify()
                 .id(d => d.id)
                 .parentIds(d => d.parentIds);
+
             const graph = stratify(dagNodes);
 
-            // Configure layout
+            // Layout configuration
             const layout = d3dag.sugiyama()
-                .nodeSize([40, 20])
+                .nodeSize([120, 60]) // Node dimensions
                 .coord(d3dag.coordCenter());
             const { width, height } = layout(graph);
 
+            // Configure SVG container
             const svgContainer = svg
                 .attr("viewBox", `0 0 ${width + 100} ${height + 100}`)
                 .attr("preserveAspectRatio", "xMidYMid meet");
@@ -117,7 +122,7 @@
                 .attr("transform", d => `translate(${d.x},${d.y})`);
 
             nodes.append("circle")
-                .attr("r", 30)
+                .attr("r", 25)
                 .attr("fill", d => getNodeColor(d.data.type));
 
             nodes.append("text")
@@ -125,36 +130,34 @@
                 .attr("text-anchor", "middle")
                 .attr("dy", 4)
                 .attr("font-size", 12)
-                .attr("fill", "white");
+                .attr("fill", "#000");
         } catch (error) {
             console.error("Error rendering the DAG:", error);
         }
     }
 
     /**
-     * Fetches and visualizes the current plan automatically.
+     * Initialize visualization using provided query plan.
      */
-    async function initVisualization() {
+    function initVisualization() {
         try {
-            const response = await fetch(`/api/query-plan-data`);
-            if (!response.ok) throw new Error(`Failed to fetch plan: ${response.statusText}`);
+            // Directly use the query plan from template context
+            const queryPlan = {{ benchmark.query_plan | tojson }};
 
-            const data = await response.json();
-            if (data.results && data.results.length > 0) {
-                const currentPlan = data.results[0].serializedLogicalPlan;
-                drawDag(currentPlan);
-                document.getElementById("raw-plan").textContent = JSON.stringify(currentPlan, null, 2);
-            } else {
-                alert("No query plan found for the current run.");
+            if (!queryPlan || queryPlan.length === 0) {
+                throw new Error("No query plan available.");
             }
+
+            drawDag(queryPlan);
+            document.getElementById("raw-plan").textContent = JSON.stringify(queryPlan, null, 2);
         } catch (error) {
-            console.error("Error fetching query plan:", error);
-            alert("Failed to fetch query plan. Check the console for details.");
+            console.error("Failed to initialize query plan visualization:", error);
+            alert("Unable to load query plan. Please check the console for more details.");
         }
     }
 
     /**
-     * Get node color based on its type.
+     * Get a node's color based on its type.
      */
     function getNodeColor(nodeType) {
         const colors = {
