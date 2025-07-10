@@ -61,7 +61,7 @@ class SystestAdapter(BenchmarkAdapter):
                 tags={"name": result["query name"]},
                 github={"repository": "https://github.com/fake/fake"}, #TODO: might not be needed
                 serializedLogicalPlan=result["serializedLogicalPlan"],
-                query_plan=[],
+                #query_plan=[],
             ))
 
         return benchmarkResults

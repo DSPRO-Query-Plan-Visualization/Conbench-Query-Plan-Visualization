@@ -1,175 +1,35 @@
-{% block head %}
-<style>
-    html, body {
-        height: 100%;
-        margin: 0;
-        padding: 20px;
-        font-family: Arial, sans-serif;
-    }
-
-    body {
-        display: flex;
-        align-items: flex-start;
-        justify-content: center;
-        flex-direction: column;
-    }
-
-    #svg-container {
-        width: 100%;
-        height: 600px;
-        border: 1px solid #ccc;
-        overflow: auto;
-    }
-
-    svg {
-        width: 100%;
-        height: 100%;
-    }
-
-    #raw-plan {
-        max-height: 200px;
-        overflow-y: auto;
-        font-size: 12px;
-    }
-</style>
-{% endblock %}
-
-{% block content %}
-<ul class="list-group mb-4">
+<ul class="list-group">
     <li class="list-group-item list-group-item-primary">
-        Raw Query Plan:
-        <pre id="raw-plan">Loading query plan...</pre>
+        {{ benchmark.logical_query_plan }}
     </li>
 </ul>
-
-<div id="svg-container">
-    <svg id="svg"></svg>
-</div>
-{% endblock %}
-
+<div id="container"></div>
 {% block scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://unpkg.com/d3-dag@1.1.0"></script>
 <script type="module">
-    import * as d3 from "https://cdn.skypack.dev/d3@7.8.4";
-    import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.1.0";
 
-    /**
-     * Draws the Directed Acyclic Graph (DAG) for a specific query plan.
-     * @param {Array} planData - The data for the query plan.
-     */
-    function drawDag(planData) {
-        try {
-            if (!Array.isArray(planData) || planData.length === 0) {
-                console.error("No valid plan data found:", planData);
-                return;
-            }
+// accessing the query_plan just like above:
+const query_plan = {{ benchmark.logical_query_plan | default('{}') | tojson }};
+console.log(query_plan);
 
-            // Prepare nodes and edges
-            const dagNodes = planData.map(node => ({
-                id: node.id.toString(),
-                parentIds: (node.inputs || []).map(i => i.toString()),
-                label: node.label || "Unnamed",
-                type: node.node_type || "Unknown",
-            }));
+// d3-dag example from github: https://github.com/erikbrinkman/d3-dag?tab=readme-ov-file#installing
+const data = [
+    { id: "0" },
+    { id: "1", parentIds: ["0"] },
+    { id: "2", parentIds: ["0"] },
+    { id: "3", parentIds: ["1", "2"] }
+  ];
+  const dag = d3.graphStratify()(data);
+const layout = d3.sugiyama();
+layout(dag);
 
-            if (!dagNodes.every(node => node.id)) {
-                console.error("Invalid node data encountered:", dagNodes);
-                return;
-            }
+for (const node of dag.nodes()) {
+  console.log(node.x, node.y);
+}
+for (const { points } of dag.links()) {
+  console.log(points);
+}
 
-            // Clear existing SVG
-            const svg = d3.select("#svg");
-            svg.selectAll("*").remove();
-
-            // Create the DAG
-            const stratify = d3dag.graphStratify()
-                .id(d => d.id)
-                .parentIds(d => d.parentIds);
-            const graph = stratify(dagNodes);
-
-            // Configure layout
-            const layout = d3dag.sugiyama()
-                .nodeSize([40, 20])
-                .coord(d3dag.coordCenter());
-            const { width, height } = layout(graph);
-
-            const svgContainer = svg
-                .attr("viewBox", `0 0 ${width + 100} ${height + 100}`)
-                .attr("preserveAspectRatio", "xMidYMid meet");
-
-            const container = svgContainer.append("g").attr("transform", "translate(50,50)");
-
-            // Draw edges
-            const line = d3.line().curve(d3.curveMonotoneY);
-            container.append("g")
-                .selectAll("path")
-                .data(graph.links())
-                .join("path")
-                .attr("d", d => line(d.points))
-                .attr("fill", "none")
-                .attr("stroke", "#aaa")
-                .attr("stroke-width", 2);
-
-            // Draw nodes
-            const nodes = container.append("g")
-                .selectAll("g")
-                .data(graph.nodes())
-                .join("g")
-                .attr("transform", d => `translate(${d.x},${d.y})`);
-
-            nodes.append("circle")
-                .attr("r", 30)
-                .attr("fill", d => getNodeColor(d.data.type));
-
-            nodes.append("text")
-                .text(d => d.data.label)
-                .attr("text-anchor", "middle")
-                .attr("dy", 4)
-                .attr("font-size", 12)
-                .attr("fill", "white");
-        } catch (error) {
-            console.error("Error rendering the DAG:", error);
-        }
-    }
-
-    /**
-     * Fetches and visualizes the current plan automatically.
-     */
-    async function initVisualization() {
-        try {
-            const response = await fetch(`/api/query-plan-data`);
-            if (!response.ok) throw new Error(`Failed to fetch plan: ${response.statusText}`);
-
-            const data = await response.json();
-            if (data.results && data.results.length > 0) {
-                const currentPlan = data.results[0].serializedLogicalPlan;
-                drawDag(currentPlan);
-                document.getElementById("raw-plan").textContent = JSON.stringify(currentPlan, null, 2);
-            } else {
-                alert("No query plan found for the current run.");
-            }
-        } catch (error) {
-            console.error("Error fetching query plan:", error);
-            alert("Failed to fetch query plan. Check the console for details.");
-        }
-    }
-
-    /**
-     * Get node color based on its type.
-     */
-    function getNodeColor(nodeType) {
-        const colors = {
-            "Source": "#2e8b57",
-            "Sink": "#dc143c",
-            "Selection": "#4682b4",
-            "Filter": "#4682b4",
-            "WindowedAggregation": "#ffa500",
-            "EventTimeWatermarkAssigner": "#ba55d3",
-            "Unknown": "#708090",
-        };
-        return colors[nodeType] || "#708090";
-    }
-
-    // Initialize visualization on page load
-    document.addEventListener("DOMContentLoaded", initVisualization);
 </script>
 {% endblock %}
