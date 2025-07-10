@@ -35,12 +35,6 @@
 {% endblock %}
 
 {% block content %}
-<ul class="list-group mb-4">
-    <li class="list-group-item list-group-item-primary">
-        Raw Query Plan:
-        <pre id="raw-plan">Loading query plan...</pre>
-    </li>
-</ul>
 
 <div id="svg-container">
     <svg id="svg"></svg>
@@ -56,85 +50,103 @@
      * Draws the Directed Acyclic Graph (DAG) for a specific query plan.
      * @param {Array} queryPlan - The raw query plan data from the server.
      */
-    function drawDag(queryPlan) {
-        try {
-            // Extract the nodes (queried as serializedLogicalPlan)
-            const planData = queryPlan?.find(([planType]) => planType === "serializedLogicalPlan")?.[1];
+function drawDag(queryPlan) {
+    try {
+        const planData = queryPlan?.find(([planType]) => planType === "serializedLogicalPlan")?.[1];
 
-            if (!Array.isArray(planData) || planData.length === 0) {
-                console.error("No valid serializedLogicalPlan data found:", planData);
-                return;
-            }
-
-            // Map to DAG-compatible nodes
-            const dagNodes = planData.map(node => ({
-                id: node.id?.toString(), // Ensure the ID is a string
-                parentIds: (node.inputs || []).map(input => input.toString()), // Convert inputs to strings
-                label: node.label || "Unnamed Node",
-                type: node.node_type || "Unknown",
-            }));
-
-            // Validate all nodes have unique and defined IDs
-            if (!dagNodes.every(node => node.id)) {
-                throw new Error("One or more nodes are missing valid 'id' properties.");
-            }
-
-            // Clear previous SVG content
-            const svg = d3.select("#svg");
-            svg.selectAll("*").remove();
-
-            // Build the DAG structure
-            const stratify = d3dag.graphStratify()
-                .id(d => d.id)
-                .parentIds(d => d.parentIds);
-
-            const graph = stratify(dagNodes);
-
-            // Layout configuration
-            const layout = d3dag.sugiyama()
-                .nodeSize([120, 60]) // Node dimensions
-                .coord(d3dag.coordCenter());
-            const { width, height } = layout(graph);
-
-            // Configure SVG container
-            const svgContainer = svg
-                .attr("viewBox", `0 0 ${width + 100} ${height + 100}`)
-                .attr("preserveAspectRatio", "xMidYMid meet");
-
-            const container = svgContainer.append("g").attr("transform", "translate(50,50)");
-
-            // Draw edges
-            const line = d3.line().curve(d3.curveMonotoneY);
-            container.append("g")
-                .selectAll("path")
-                .data(graph.links())
-                .join("path")
-                .attr("d", d => line(d.points))
-                .attr("fill", "none")
-                .attr("stroke", "#aaa")
-                .attr("stroke-width", 2);
-
-            // Draw nodes
-            const nodes = container.append("g")
-                .selectAll("g")
-                .data(graph.nodes())
-                .join("g")
-                .attr("transform", d => `translate(${d.x},${d.y})`);
-
-            nodes.append("circle")
-                .attr("r", 25)
-                .attr("fill", d => getNodeColor(d.data.type));
-
-            nodes.append("text")
-                .text(d => d.data.label)
-                .attr("text-anchor", "middle")
-                .attr("dy", 4)
-                .attr("font-size", 12)
-                .attr("fill", "#000");
-        } catch (error) {
-            console.error("Error rendering the DAG:", error);
+        if (!Array.isArray(planData) || planData.length === 0) {
+            console.error("No valid serializedLogicalPlan data found:", planData);
+            return;
         }
+
+        // Map the query plan data into nodes.
+        const dagNodes = planData.map(node => ({
+            id: node.id?.toString(),
+            parentIds: (node.inputs || []).map(input => input.toString()),
+            label: node.label || "Unnamed Node",
+            type: node.node_type || "Unknown",
+        }));
+
+        if (!dagNodes.every(node => node.id)) {
+            throw new Error("One or more nodes are missing valid 'id' properties.");
+        }
+
+        // Clear the SVG content.
+        const svg = d3.select("#svg");
+        svg.selectAll("*").remove();
+
+        // Build the DAG structure.
+        const stratify = d3dag.graphStratify()
+            .id(d => d.id)
+            .parentIds(d => d.parentIds);
+
+        const graph = stratify(dagNodes);
+
+        // Apply layout using Sugiyama.
+        const layout = d3dag.sugiyama()
+            .nodeSize([120, 60]) // Node dimensions
+            .coord(d3dag.coordCenter());
+        const { width, height } = layout(graph);
+
+        // Configure SVG container
+
+        const padding_x = 300;
+        const padding_y = 300;
+
+        const svgContainer = svg
+            .attr("viewBox", `0 0 ${width + padding_x} ${height + padding_y}`)
+            .attr("preserveAspectRatio", "xMidYMid meet");
+        // Create a container group for the graph.
+        const container = svgContainer.append("g").attr("transform", "translate(150,150)");
+
+
+        // Draw edges using Sugiyama-generated points.
+        const line = d3.line().curve(d3.curveMonotoneY);
+        container.append("g")
+            .selectAll("path")
+            .data(graph.links())
+            .join("path")
+            .attr("d", d => line(d.points))
+            .attr("fill", "none")
+            .attr("stroke", "#aaa")
+            .attr("stroke-width", 2);
+
+        // Draw nodes with rectangles (for labels).
+        const nodeGroups = container.append("g")
+            .selectAll("g")
+            .data(graph.nodes())
+            .join("g")
+            .attr("transform", d => `translate(${d.x},${d.y})`);
+
+        nodeGroups.each(function(d) {
+            const g = d3.select(this);
+
+            // Render text to measure dimensions for the rectangle.
+            const text = g.append("text")
+                .text(d => d.data.label)
+                .attr("text-anchor", "middle") // Center text horizontally.
+                .attr("font-size", 12)
+                .attr("fill", "#000")
+                .attr("dy", 4); // Slight vertical adjustment.
+
+            // Measure text width for dynamic rectangle sizing.
+            const textWidth = text.node().getBBox().width;
+            const boxPadding = 10; // Box padding around the text.
+
+            // Draw a rectangle behind the text.
+            g.insert("rect", "text")
+                .attr("x", -(textWidth / 2) - boxPadding / 2) // Center the rectangle horizontally.
+                .attr("y", -15) // Align above the text vertically.
+                .attr("width", textWidth + boxPadding)
+                .attr("height", 30)
+                .attr("fill", d => getNodeColor(d.data.type))
+                .attr("stroke", "#000")
+                .attr("stroke-width", 1.5);
+        });
+    } catch (error) {
+        console.error("Error rendering the DAG:", error);
     }
+}
 
     /**
      * Initialize visualization using provided query plan.
@@ -149,7 +161,6 @@
             }
 
             drawDag(queryPlan);
-            document.getElementById("raw-plan").textContent = JSON.stringify(queryPlan, null, 2);
         } catch (error) {
             console.error("Failed to initialize query plan visualization:", error);
             alert("Unable to load query plan. Please check the console for more details.");
