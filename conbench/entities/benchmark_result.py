@@ -28,6 +28,8 @@ from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
 #from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
 from ..entities.logical_query_plan import (LogicalQueryPlan, LogicalQueryPlanNode, LogicalQueryPlanSerializer)
+from ..entities.pipeline_query_plan import (PipelinePlan, PipelineNode, PipelinePlanSerializer)
+from ..entities.operator_query_plan import (OperatorPlan, OperatorNode, OperatorPlanSerializer)
 
 
 from ..entities._entity import (
@@ -104,6 +106,8 @@ class BenchmarkResult(Base, EntityMixin):
 
     # TODO:
     logical_query_plan: Mapped[Optional[LogicalQueryPlan]] = relationship("LogicalQueryPlan", lazy="joined")
+    pipeline_query_plan: Mapped[Optional[PipelinePlan]] = relationship("PipelinePlan", lazy="joined")
+
 
 
     # The "fingerprint" (identifier) of this result's "history" (timeseries group). Two
@@ -343,6 +347,27 @@ class BenchmarkResult(Base, EntityMixin):
                     "outputs"               : node["outputs"],
                 })
 
+        if "serializedPipelinePlan" in userres:
+            pipeline_plan = PipelinePlan.create({"benchmark_id":benchmark_result.id})
+            for pipeline in userres["serializedPipelinePlan"]:
+                pipeline_node = PipelineNode.create({
+                    "pipeline_plan_id" : pipeline_plan.id,
+                    "pipeline_id" : pipeline["pipeline_id"],
+                    "predecessors" : pipeline["predecessors"],
+                    "successors" : pipeline["successors"],
+                })
+
+                operator_plan = OperatorPlan.create({"pipeline_node_id" : pipeline_node.id,})
+                for operator in pipeline["operators"]:
+                    OperatorNode.create({
+                        "operator_plan_id" : operator_plan.id,
+                        "id": operator["id"],
+                        "label": operator["label"],
+                        "inputs": operator["inputs"],
+                        "outputs": operator["outputs"],
+                    })
+
+
         return benchmark_result
 
     def update(self, data):
@@ -424,6 +449,10 @@ class BenchmarkResult(Base, EntityMixin):
                 out_dict["logical_query_plan"] = LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan)
             # else:
             #     out_dict["logical_query_plan"] = None
+            if benchmark_result.pipeline_query_plan:
+                log.info("\n...\n...")
+                log.info(PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan))
+                out_dict["pipeline_query_plan"] = PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan)
 
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict
@@ -1281,7 +1310,30 @@ class LogicalQueryPlanNodeSchema(marshmallow.Schema):
         marshmallow.fields.Integer(allow_none=True),
         required=False)
 
+class OperatorQueryPlanNodeSchema(marshmallow.Schema):
+    id = marshmallow.fields.Integer()
+    label = marshmallow.fields.String()
+    inputs = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False)
+    outputs = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False)
 
+class PipelineQueryPlanSchema(marshmallow.Schema):
+    pipeline_id = marshmallow.fields.Integer()
+    predecessors = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False,
+    )
+    successors = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False,
+    )
+    operators = marshmallow.fields.List(
+        marshmallow.fields.Nested(OperatorQueryPlanNodeSchema),
+        required=False,
+    )
 
 
 class BenchmarkResultStatsSchema(marshmallow.Schema):
@@ -1768,6 +1820,13 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
             LogicalQueryPlanNodeSchema,
             required=False,
         ),
+        required=False,
+    )
+
+
+
+    serializedPipelinePlan = marshmallow.fields.List(
+        marshmallow.fields.Nested(PipelineQueryPlanSchema),
         required=False,
     )
 

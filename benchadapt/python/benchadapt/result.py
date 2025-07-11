@@ -162,6 +162,7 @@ class BenchmarkResult:
         default_factory=_machine_info.gh_commit_info_from_env
     )
     serializedLogicalPlan: List[ Dict[str ,Any] ] = field(default_factory=list)
+    serializedPipelinePlan: List[ Dict[str ,Any] ] = field(default_factory=list)
     #query_plan: List[ Any ] = field(default_factory=list)
 
     def __post_init__(self) -> None:
