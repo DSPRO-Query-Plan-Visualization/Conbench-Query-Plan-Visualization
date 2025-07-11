@@ -342,7 +342,7 @@ class BenchmarkResult(Base, EntityMixin):
                     "logical_query_plan_id" : logical_query_plan.id,
                     "id"                    : node["id"],
                     "label"                 : node["label"],
-                    "node_type"             : node["node_type"],
+                    "node_type"             : node["nodeType"],
                     "inputs"                : node["inputs"],
                     "outputs"               : node["outputs"],
                 })
@@ -352,7 +352,8 @@ class BenchmarkResult(Base, EntityMixin):
             for pipeline in userres["serializedPipelinePlan"]:
                 pipeline_node = PipelineNode.create({
                     "pipeline_plan_id" : pipeline_plan.id,
-                    "pipeline_id" : pipeline["pipeline_id"],
+                    "incoming_tuples" : pipeline["incomingTuples"],
+                    "pipeline_id" : pipeline["pipelineId"],
                     "predecessors" : pipeline["predecessors"],
                     "successors" : pipeline["successors"],
                 })
@@ -1302,7 +1303,7 @@ class BenchmarkResultSerializer:
 class LogicalQueryPlanNodeSchema(marshmallow.Schema):
     id = marshmallow.fields.Integer()
     label = marshmallow.fields.String()
-    node_type = marshmallow.fields.String()
+    nodeType = marshmallow.fields.String()
     inputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
         required=False)
@@ -1321,7 +1322,8 @@ class OperatorQueryPlanNodeSchema(marshmallow.Schema):
         required=False)
 
 class PipelineQueryPlanSchema(marshmallow.Schema):
-    pipeline_id = marshmallow.fields.Integer()
+    pipelineId = marshmallow.fields.Integer()
+    incomingTuples = marshmallow.fields.Integer()
     predecessors = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
         required=False,

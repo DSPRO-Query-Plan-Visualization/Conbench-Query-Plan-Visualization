@@ -20,6 +20,7 @@ class PipelineNode(Base, EntityMixin["PipelineNode"]):
 
     # content:
     pipeline_id: Mapped[int] = NotNull(s.Numeric)
+    incoming_tuples: Mapped[int] = NotNull(s.Numeric)
     predecessors: Mapped[list] = Nullable(
         postgresql.ARRAY(s.Numeric), default=[]
     )
@@ -37,6 +38,7 @@ class _PipelineNodeSerializer(EntitySerializer):
                 "pipeline_id": pipeline_node.pipeline_id,
                 "predecessors": pipeline_node.predecessors or [],
                 "successors": pipeline_node.successors or [],
+                "incoming_tuples": pipeline_node.incoming_tuples,
                 "operators": OperatorPlanSerializer().many._dump(pipeline_node.operators),
             }
         return result
