@@ -26,7 +26,9 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
-from ..entities.query_plan import (QueryPlan, QueryPlanNode,QueryPlanSerializer)
+from ..entities.logical_query_plan import (LogicalQueryPlan, LogicalQueryPlanNode, LogicalQueryPlanSerializer)
+from ..entities.pipeline_query_plan import (PipelinePlan, PipelineNode, PipelinePlanSerializer)
+from ..entities.operator_query_plan import (OperatorPlan, OperatorNode)
 
 
 from ..entities._entity import (
@@ -98,7 +100,9 @@ class BenchmarkResult(Base, EntityMixin):
     hardware: Mapped[Hardware] = relationship("Hardware", lazy="joined")
 
     # TODO: re-check if selectin is the better choice compared to joined
-    query_plan: Mapped[List[QueryPlan]] = relationship("QueryPlan", lazy="selectin", cascade="all, delete-orphan")
+    # TODO: cascading for easier delete ?
+    logical_query_plan: Mapped[Optional[LogicalQueryPlan]] = relationship("LogicalQueryPlan", lazy="joined")
+    pipeline_query_plan: Mapped[Optional[PipelinePlan]] = relationship("PipelinePlan", lazy="joined")
 
     # The "fingerprint" (identifier) of this result's "history" (timeseries group). Two
     # results with the same history_fingerprint should be directly comparable, because
@@ -309,17 +313,39 @@ class BenchmarkResult(Base, EntityMixin):
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
 
-        for query_plan_type, plan in userres["query_plan"]:
-            query_plan = QueryPlan.create({"query_plan_type":query_plan_type, "benchmark_id":benchmark_result.id})
-            for node in plan:
-                QueryPlanNode.create({
-                    "query_plan_id": query_plan.id,
-                    "id" : node["id"],
-                    "label" : node["label"],
-                    "node_type" : node["node_type"],
-                    "inputs": node["inputs"],
-                    "outputs": node["outputs"],
+        if "serializedLogicalPlan" in userres:
+            logical_query_plan = LogicalQueryPlan.create({"benchmark_id":benchmark_result.id})
+            for node in userres["serializedLogicalPlan"]:
+                LogicalQueryPlanNode.create({
+                    "logical_query_plan_id" : logical_query_plan.id,
+                    "id"                    : node["id"],
+                    "label"                 : node["label"],
+                    "node_type"             : node["nodeType"],
+                    "inputs"                : node["inputs"],
+                    "outputs"               : node["outputs"],
                 })
+
+        if "serializedPipelinePlan" in userres:
+            pipeline_plan = PipelinePlan.create({"benchmark_id":benchmark_result.id})
+            for pipeline in userres["serializedPipelinePlan"]:
+                pipeline_node = PipelineNode.create({
+                    "pipeline_plan_id" : pipeline_plan.id,
+                    "incoming_tuples" : pipeline["incomingTuples"],
+                    "pipeline_id" : pipeline["pipelineId"],
+                    "predecessors" : pipeline["predecessors"],
+                    "successors" : pipeline["successors"],
+                })
+
+                operator_plan = OperatorPlan.create({"pipeline_node_id" : pipeline_node.id,})
+                for operator in pipeline["operators"]:
+                    OperatorNode.create({
+                        "operator_plan_id" : operator_plan.id,
+                        "id": operator["id"],
+                        "label": operator["label"],
+                        "inputs": operator["inputs"],
+                        "outputs": operator["outputs"],
+                    })
+
 
         return benchmark_result
 
@@ -391,12 +417,19 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
 
-            # sets query_plan to list of query_plans or []
-            query_plan_list = []
-            for qp in benchmark_result.query_plan:
-                query_plan_list.append(QueryPlanSerializer().many._dump(qp)) # feels wrong
+            if benchmark_result.logical_query_plan:
+                out_dict["logical_query_plan"] = LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan)
+            # else:
+            #     out_dict["logical_query_plan"] = None
+            #
+            # if we do this we also have to change the tests and some functions
+            # currently used alternative: make sure that we set default values in the html using jinja
+            # like:
+            #      const logical = {{ benchmark.logical_query_plan | default('{}') | tojson }};
 
-            out_dict["query_plan"] = query_plan_list
+            if benchmark_result.pipeline_query_plan:
+                out_dict["pipeline_query_plan"] = PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan)
+
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict
             out_dict["hardware"] = hardware_dict
@@ -1241,10 +1274,10 @@ class BenchmarkResultSerializer:
     one = _Serializer()
     many = _Serializer(many=True)
 
-class QueryPlanNodeSchema(marshmallow.Schema):
+class LogicalQueryPlanNodeSchema(marshmallow.Schema):
     id = marshmallow.fields.Integer()
     label = marshmallow.fields.String()
-    node_type = marshmallow.fields.String()
+    nodeType = marshmallow.fields.String()
     inputs = marshmallow.fields.List(
         marshmallow.fields.Integer(allow_none=True),
         required=False)
@@ -1252,7 +1285,31 @@ class QueryPlanNodeSchema(marshmallow.Schema):
         marshmallow.fields.Integer(allow_none=True),
         required=False)
 
+class OperatorQueryPlanNodeSchema(marshmallow.Schema):
+    id = marshmallow.fields.Integer()
+    label = marshmallow.fields.String()
+    inputs = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False)
+    outputs = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False)
 
+class PipelineQueryPlanSchema(marshmallow.Schema):
+    pipelineId = marshmallow.fields.Integer()
+    incomingTuples = marshmallow.fields.Integer()
+    predecessors = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False,
+    )
+    successors = marshmallow.fields.List(
+        marshmallow.fields.Integer(allow_none=True),
+        required=False,
+    )
+    operators = marshmallow.fields.List(
+        marshmallow.fields.Nested(OperatorQueryPlanNodeSchema),
+        required=False,
+    )
 
 
 class BenchmarkResultStatsSchema(marshmallow.Schema):
@@ -1717,20 +1774,20 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
         },
     )
 
-    # TODO: might have to add a description / metadata
-    # TODO: decide where required is true / false
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
-    query_plan = marshmallow.fields.List(
-        marshmallow.fields.Tuple((
-            marshmallow.fields.String(required=False),
-            marshmallow.fields.List(
-                marshmallow.fields.Nested(
-                    QueryPlanNodeSchema,
-                    required=False,
-                )
-            )
-        )),
-        required=False
+
+    # TODO: add description
+    serializedLogicalPlan = marshmallow.fields.List(
+        marshmallow.fields.Nested(
+            LogicalQueryPlanNodeSchema,
+            required=False,
+        ),
+        required=False,
+    )
+
+    serializedPipelinePlan = marshmallow.fields.List(
+        marshmallow.fields.Nested(PipelineQueryPlanSchema),
+        required=False,
     )
 
     error = marshmallow.fields.Dict(

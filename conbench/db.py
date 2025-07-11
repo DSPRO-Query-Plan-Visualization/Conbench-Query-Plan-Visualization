@@ -82,7 +82,7 @@ def get_tables_in_cleanup_order():
 
     tables = delarative_base.metadata.sorted_tables
 
-    sort_by_name = ["query_plan_node","query_plan","benchmark_result"]
+    sort_by_name = ["operator_node","operator_plan","pipeline_node","pipeline_plan","logical_query_plan_node","logical_query_plan","benchmark_result"]
 
     tabledict = {t.name: t for t in tables}
     sorted_tables = []

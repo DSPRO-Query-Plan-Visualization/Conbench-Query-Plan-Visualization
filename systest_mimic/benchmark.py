@@ -38,7 +38,7 @@ class SystestAdapter(BenchmarkAdapter):
         self.results = self.transform_results()
 
     def _transform_results(self) -> List[BenchmarkResult]:
-        with open(self.systest_working_dir + "/debug_results.json", "r") as f:
+        with open(self.systest_working_dir + "/BenchmarkResults_LinearRoad_simple.json", "r") as f:
             raw_results = json.load(f)
 
         benchmarkResults = []
@@ -60,11 +60,8 @@ class SystestAdapter(BenchmarkAdapter):
                 context={"benchmark_language": "systest"},
                 tags={"name": result["query name"]},
                 github={"repository": "https://github.com/fake/fake"}, #TODO: might not be needed
-                query_plan=[
-                    ["serializedLogicalPlan", result["serializedLogicalPlan"]],
-                    #["serializedPhysicalPlan", result["serializedPhysicalPlan"]],
-                    #["serializedAdditionPlan", result["serializedAdditionPlan"]],
-                ],
+                serializedLogicalPlan=result["serializedLogicalPlan"],
+                serializedPipelinePlan=result["serializedPipelinePlan"],
             ))
 
         return benchmarkResults
