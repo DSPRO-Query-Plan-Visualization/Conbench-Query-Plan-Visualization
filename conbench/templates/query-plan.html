@@ -66,6 +66,8 @@
             }
 
             // Create nodes and edges - Convert all IDs to strings for consistency
+            console.log(`Plan Data: ${planData}`);
+
             const nodes = planType === "logical" 
                 ? planData.map(node => ({
                     id: String(node.id),
@@ -88,14 +90,14 @@
             const graph = stratify(nodes);
             const layout = d3dag.sugiyama()
                 .nodeSize([120, 60])
-                .coord(d3dag.coordCenter());
+                .coord(d3dag.coordTopological());
             layout(graph);
 
             // Clear the SVG properly
             d3.select("#svg").selectAll("*").remove();
             const svgContainer = d3.select("#svg");
 
-            // Set default dimensions - graph.children might not exist in all d3-dag versions
+            // Set default dimensions
             const defaultWidth = 600;
             const defaultHeight = 600;
             svgContainer
@@ -241,6 +243,8 @@
 
         // Find the plan data by type (serializedLogicalPlan or serializedPipelinePlan)
         const planKey = planType === 'logical' ? 'serializedLogicalPlan' : 'serializedPipelinePlan';
+        console.log(`Looking for planKey: ${planKey}`);
+        //Select the right Entry / Plan with the Key
         const planEntry = queryPlan.find(entry => Array.isArray(entry) && entry[0] === planKey);
 
         if (!planEntry || !planEntry[1]) {
@@ -254,6 +258,7 @@
     // Initialize and configure the visualization
     document.addEventListener("DOMContentLoaded", () => {
         const queryPlan = {{ benchmark.query_plan | tojson }};
+        console.log('Query plan:', queryPlan);
         const selector = document.getElementById("plan-selector");
 
         console.log('Query plan data:', queryPlan);
