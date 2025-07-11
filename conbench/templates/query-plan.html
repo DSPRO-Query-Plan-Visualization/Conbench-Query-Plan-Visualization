@@ -61,7 +61,7 @@
      */
     function setupZoom(svg, zoomableGroup) {
         const zoomBehavior = d3.zoom()
-            .scaleExtent([0.5, 0,8, 1.4]) // Set zoom limits to 50% to 500% scaling
+            .scaleExtent([0.1, 2]) // Set zoom limits to 50% to 500% scaling
             .on("zoom", (event) => {
                 // Apply the zoom transformation to the zoomable group
                 zoomableGroup.attr("transform", event.transform);
