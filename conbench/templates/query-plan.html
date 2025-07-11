@@ -14,6 +14,10 @@
         flex-direction: column;
     }
 
+    #control-panel {
+        margin-bottom: 20px;
+    }
+
     #svg-container {
         width: 100%;
         height: 600px;
@@ -25,16 +29,17 @@
         width: 100%;
         height: 100%;
     }
-
-    #raw-plan {
-        max-height: 200px;
-        overflow-y: auto;
-        font-size: 12px;
-    }
 </style>
 {% endblock %}
 
 {% block content %}
+<div id="control-panel">
+    <label for="plan-selector">Select Plan Type:</label>
+    <select id="plan-selector">
+        <option value="logical">Logical Plan</option>
+        <option value="pipeline">Pipeline Plan</option>
+    </select>
+</div>
 
 <div id="svg-container">
     <svg id="svg"></svg>
@@ -47,143 +52,227 @@
     import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.1.0";
 
     /**
-     * Draws the Directed Acyclic Graph (DAG) for a specific query plan.
-     * @param {Array} queryPlan - The raw query plan data from the server.
+     * Draws the directed graph visualization.
+     * @param {string} planType - The type of plan to render ("logical" or "pipeline").
+     * @param {Array} planData - The data for the selected plan.
      */
-function drawDag(queryPlan) {
-    try {
-        const planData = queryPlan?.find(([planType]) => planType === "serializedLogicalPlan")?.[1];
-
-        if (!Array.isArray(planData) || planData.length === 0) {
-            console.error("No valid serializedLogicalPlan data found:", planData);
-            return;
-        }
-
-        // Map the query plan data into nodes.
-        const dagNodes = planData.map(node => ({
-            id: node.id?.toString(),
-            parentIds: (node.inputs || []).map(input => input.toString()),
-            label: node.label || "Unnamed Node",
-            type: node.node_type || "Unknown",
-        }));
-
-        if (!dagNodes.every(node => node.id)) {
-            throw new Error("One or more nodes are missing valid 'id' properties.");
-        }
-
-        // Clear the SVG content.
-        const svg = d3.select("#svg");
-        svg.selectAll("*").remove();
-
-        // Build the DAG structure.
-        const stratify = d3dag.graphStratify()
-            .id(d => d.id)
-            .parentIds(d => d.parentIds);
-
-        const graph = stratify(dagNodes);
-
-        // Apply layout using Sugiyama.
-        const layout = d3dag.sugiyama()
-            .nodeSize([120, 60]) // Node dimensions
-            .coord(d3dag.coordCenter());
-        const { width, height } = layout(graph);
-
-        // Configure SVG container
-
-        const padding_x = 300;
-        const padding_y = 300;
-
-        const svgContainer = svg
-            .attr("viewBox", `0 0 ${width + padding_x} ${height + padding_y}`)
-            .attr("preserveAspectRatio", "xMidYMid meet");
-        // Create a container group for the graph.
-        const container = svgContainer.append("g").attr("transform", "translate(150,150)");
-
-
-        // Draw edges using Sugiyama-generated points.
-        const line = d3.line().curve(d3.curveMonotoneY);
-        container.append("g")
-            .selectAll("path")
-            .data(graph.links())
-            .join("path")
-            .attr("d", d => line(d.points))
-            .attr("fill", "none")
-            .attr("stroke", "#aaa")
-            .attr("stroke-width", 2);
-
-        // Draw nodes with rectangles (for labels).
-        const nodeGroups = container.append("g")
-            .selectAll("g")
-            .data(graph.nodes())
-            .join("g")
-            .attr("transform", d => `translate(${d.x},${d.y})`);
-
-        nodeGroups.each(function(d) {
-            const g = d3.select(this);
-
-            // Render text to measure dimensions for the rectangle.
-            const text = g.append("text")
-                .text(d => d.data.label)
-                .attr("text-anchor", "middle") // Center text horizontally.
-                .attr("font-size", 12)
-                .attr("fill", "#000")
-                .attr("dy", 4); // Slight vertical adjustment.
-
-            // Measure text width for dynamic rectangle sizing.
-            const textWidth = text.node().getBBox().width;
-            const boxPadding = 10; // Box padding around the text.
-
-            // Draw a rectangle behind the text.
-            g.insert("rect", "text")
-                .attr("x", -(textWidth / 2) - boxPadding / 2) // Center the rectangle horizontally.
-                .attr("y", -15) // Align above the text vertically.
-                .attr("width", textWidth + boxPadding)
-                .attr("height", 30)
-                .attr("fill", d => getNodeColor(d.data.type))
-                .attr("stroke", "#000")
-                .attr("stroke-width", 1.5);
-        });
-    } catch (error) {
-        console.error("Error rendering the DAG:", error);
-    }
-}
-
-    /**
-     * Initialize visualization using provided query plan.
-     */
-    function initVisualization() {
+    function drawGraph(planType, planData) {
         try {
-            // Directly use the query plan from template context
-            const queryPlan = {{ benchmark.query_plan | tojson }};
+            console.log(`Drawing ${planType} plan with ${planData?.length || 0} nodes`, planData);
 
-            if (!queryPlan || queryPlan.length === 0) {
-                throw new Error("No query plan available.");
+            if (!Array.isArray(planData) || planData.length === 0) {
+                console.error(`No data found for ${planType}!`);
+                return;
             }
 
-            drawDag(queryPlan);
+            // Create nodes and edges - Convert all IDs to strings for consistency
+            const nodes = planType === "logical" 
+                ? planData.map(node => ({
+                    id: String(node.id),
+                    label: node.label,
+                    parentIds: (node.inputs || []).map(input => String(input)),
+                    type: node.node_type || "Unknown"
+                }))
+                : planData.flatMap(pipeline => pipeline.operators.map(op => ({
+                    id: String(op.id),
+                    label: `${op.label} (Pipeline ${pipeline.pipeline_id})`,
+                    parentIds: (op.inputs || []).map(input => String(input)),
+                    type: "Operators",
+                    pipeline_id: pipeline.pipeline_id
+                })));
+
+            const stratify = d3dag.graphStratify()
+                .id(d => d.id)
+                .parentIds(d => d.parentIds);
+
+            const graph = stratify(nodes);
+            const layout = d3dag.sugiyama()
+                .nodeSize([120, 60])
+                .coord(d3dag.coordCenter());
+            layout(graph);
+
+            // Clear the SVG properly
+            d3.select("#svg").selectAll("*").remove();
+            const svgContainer = d3.select("#svg");
+
+            // Set default dimensions - graph.children might not exist in all d3-dag versions
+            const defaultWidth = 600;
+            const defaultHeight = 600;
+            svgContainer
+                .attr("viewBox", `0 0 ${defaultWidth} ${defaultHeight}`)
+                .attr("preserveAspectRatio", "xMidYMid meet");
+
+            const container = svgContainer.append("g").attr("transform", "translate(250,50)");
+
+            // Draw edges
+            const line = d3.line().curve(d3.curveMonotoneY);
+            container.selectAll("path")
+                .data(graph.links())
+                .join("path")
+                .attr("d", d => line(d.points))
+                .attr("fill", "none")
+                .attr("stroke", "#aaa")
+                .attr("stroke-width", 2);
+
+            // Draw nodes with labels
+            container.selectAll("g")
+                .data(graph.nodes())
+                .join("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${d.x},${d.y})`)
+                .each(function(d) {
+                    const g = d3.select(this);
+
+                    // Get the label text and make it display nicely
+                    const labelText = d.data.label || "Unnamed";
+
+                    // Node type indicator
+                    g.append("text")
+                        .text(d.data.type || "Unknown")
+                        .attr("text-anchor", "middle")
+                        .attr("y", -5)
+                        .style("fill", "black")
+                        .style("font-size", "10px")
+                        .style("font-weight", "bold");
+
+                    // Node label
+                    const text = g.append("text")
+                        .text(d => d.data.label || "Unnamed")
+                        .attr("text-anchor", "middle")
+                        .attr("y", 10)
+                        .style("fill", "black")
+                        .style("font-size", "12px");
+
+                    // Measure text width for dynamic rectangle sizing.
+                    const textWidth = text.node().getBBox().width;
+                    const boxPadding = 10; // Box padding around the text.
+
+                    // Node rectangle
+                    g.insert("rect","text")
+                        .attr("x", -(textWidth / 2) - boxPadding / 2) // Center the rectangle horizontally.
+                        .attr("y", -15) // Align above the text vertically.
+                        .attr("width", textWidth + boxPadding)
+                        .attr("height", 30)
+                        .attr("fill", d.data.type === "Operator" ? "#add8e6" : getNodeColor(d.data.type))
+                        .attr("stroke", "black")
+                        .attr("rx", 5) // Rounded corners
+                        .attr("ry", 5);
+
+                    // Add tooltip with full label
+                    if (labelText.length > 25) {
+                        g.append("title").text(labelText);
+                    }
+                });
+
+            // Highlight Pipelines for the Pipeline Plan
+            if (planType === "pipeline") {
+                drawPipelineBoundaries(container, planData);
+            }
         } catch (error) {
-            console.error("Failed to initialize query plan visualization:", error);
-            alert("Unable to load query plan. Please check the console for more details.");
+            console.error(`Failed to draw ${planType} graph:`, error);
         }
     }
 
     /**
-     * Get a node's color based on its type.
+     * Draws boundaries for pipelines.
      */
-    function getNodeColor(nodeType) {
-        const colors = {
-            "Source": "#2e8b57",
-            "Sink": "#dc143c",
-            "Selection": "#4682b4",
-            "Filter": "#4682b4",
-            "WindowedAggregation": "#ffa500",
-            "EventTimeWatermarkAssigner": "#ba55d3",
-            "Unknown": "#708090",
-        };
-        return colors[nodeType] || "#708090";
+    function drawPipelineBoundaries(container, pipelineData) {
+        pipelineData.forEach(pipeline => {
+            // Convert all operator IDs to strings for consistency
+            const operators = pipeline.operators.map(op => String(op.id));
+            const filteredNodes = container.selectAll("g")
+                .filter(d => operators.includes(d.data.id));
+
+            if (filteredNodes.empty()) {
+                console.warn(`No nodes found for pipeline ${pipeline.pipeline_id}`);
+                return;
+            }
+
+            const xCoords = filteredNodes.data().map(d => d.x);
+            const yCoords = filteredNodes.data().map(d => d.y);
+
+            // Create boundary box
+            const xMin = Math.min(...xCoords) - 70;
+            const xMax = Math.max(...xCoords) + 70;
+            const yMin = Math.min(...yCoords) - 40;
+            const yMax = Math.max(...yCoords) + 40;
+
+            container.append("rect")
+                .attr("x", xMin)
+                .attr("y", yMin)
+                .attr("width", xMax - xMin)
+                .attr("height", yMax - yMin)
+                .attr("fill", "none")
+                .attr("stroke", "blue")
+                .attr("stroke-dasharray", "4,4")
+                .append("title")
+                .text(`Pipeline ${pipeline.pipeline_id}`);
+        });
     }
 
-    // Initialize visualization on page load
-    document.addEventListener("DOMContentLoaded", initVisualization);
+    /**
+     * Returns a color based on the type of the node.
+     */
+    function getNodeColor(type) {
+        const colors = {
+            "Source": "#99ccff",
+            "Sink": "#ff9999",
+            "Filter": "#c0c0c0",
+            "Selection": "#4682b4",
+            "WindowedAggregation": "#ffa500",
+            "EventTimeWatermarkAssigner": "#ba55d3",
+            "Operator": "#d8bfd8",
+            "Unknown": "#cccccc"
+        };
+        return colors[type] || "#cccccc";
+    }
+
+    /**
+     * Extract plan data from the query_plan array structure
+     * @param {string} planType - The type of plan to extract ("logical" or "pipeline")
+     * @param {Array} queryPlan - The full query plan data from the server
+     * @returns {Array} - The extracted plan data or an empty array
+     */
+    function extractPlanData(planType, queryPlan) {
+        if (!queryPlan || !Array.isArray(queryPlan)) {
+            console.error('Query plan is not an array:', queryPlan);
+            return [];
+        }
+
+        // Find the plan data by type (serializedLogicalPlan or serializedPipelinePlan)
+        const planKey = planType === 'logical' ? 'serializedLogicalPlan' : 'serializedPipelinePlan';
+        const planEntry = queryPlan.find(entry => Array.isArray(entry) && entry[0] === planKey);
+
+        if (!planEntry || !planEntry[1]) {
+            console.error(`No ${planKey} found in query plan:`, queryPlan);
+            return [];
+        }
+
+        return planEntry[1];
+    }
+
+    // Initialize and configure the visualization
+    document.addEventListener("DOMContentLoaded", () => {
+        const queryPlan = {{ benchmark.query_plan | tojson }};
+        const selector = document.getElementById("plan-selector");
+
+        console.log('Query plan data:', queryPlan);
+
+        // Default view is Logical Plan
+        const logicalPlanData = extractPlanData('logical', queryPlan);
+        drawGraph('logical', logicalPlanData);
+
+        // Setup plan type selector
+        selector.addEventListener("change", event => {
+            const selection = event.target.value;
+            if (selection === "logical") {
+                const logicalPlanData = extractPlanData('logical', queryPlan);
+                drawGraph("logical", logicalPlanData);
+            } else if (selection === "pipeline") {
+                const pipelinePlanData = extractPlanData('pipeline', queryPlan);
+                drawGraph("pipeline", pipelinePlanData);
+            }
+        });
+    });
 </script>
 {% endblock %}
