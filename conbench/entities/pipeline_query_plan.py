@@ -14,15 +14,15 @@ log = logging.getLogger(__name__) #change to "test"
 
 class PipelinePlan(Base, EntityMixin["PipelinePlan"]):
     __tablename__ = "pipeline_plan"
+    # plan id and connections
     id: Mapped[str] = NotNull(s.String(50), primary_key=True, default=genprimkey)
     benchmark_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("benchmark_result.id"))
     pipeline_node: Mapped[List[PipelineNode]] = relationship("PipelineNode", lazy="selectin", cascade="all, delete-orphan")
-
+    # possible metadata:
 
 
 class _PipelinePlanSerializer(EntitySerializer):
     def _dump(self, pipeline_plan):
-        log.info("\n\n[0]")
         result = [ PipelineNodeSerializer().many._dump(pipeline_node) for pipeline_node in pipeline_plan.pipeline_node ]
         return result
 

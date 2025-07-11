@@ -163,7 +163,6 @@ class BenchmarkResult:
     )
     serializedLogicalPlan: List[ Dict[str ,Any] ] = field(default_factory=list)
     serializedPipelinePlan: List[ Dict[str ,Any] ] = field(default_factory=list)
-    #query_plan: List[ Any ] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self._maybe_set_run_name()

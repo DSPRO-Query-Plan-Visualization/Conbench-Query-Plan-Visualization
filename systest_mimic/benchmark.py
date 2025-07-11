@@ -62,7 +62,6 @@ class SystestAdapter(BenchmarkAdapter):
                 github={"repository": "https://github.com/fake/fake"}, #TODO: might not be needed
                 serializedLogicalPlan=result["serializedLogicalPlan"],
                 serializedPipelinePlan=result["serializedPipelinePlan"],
-                #query_plan=[],
             ))
 
         return benchmarkResults

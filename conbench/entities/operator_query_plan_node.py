@@ -27,7 +27,6 @@ class OperatorNode(Base, EntityMixin["OperatorNode"]):
 
 class _OperatorNodeSerializer(EntitySerializer):
     def _dump(self, operator_node):
-        log.info("\n\n[4]")
         result = {
                 "id"        : operator_node.id,
                 "label"     : operator_node.label,

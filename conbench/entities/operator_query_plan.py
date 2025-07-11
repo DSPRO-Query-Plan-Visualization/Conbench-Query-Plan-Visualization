@@ -23,7 +23,6 @@ class OperatorPlan(Base, EntityMixin["OperatorPlan"]):
 
 class _OperatorPlanSerializer(EntitySerializer):
     def _dump(self, operator_plan):
-        log.info("\n\n[3]")
         result = [OperatorNodeSerializer().many._dump(operator_query_plan_node) for operator_query_plan_node in operator_plan.operator_nodes]
         return result
 

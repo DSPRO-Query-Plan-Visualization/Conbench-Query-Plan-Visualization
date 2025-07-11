@@ -32,8 +32,7 @@ class PipelineNode(Base, EntityMixin["PipelineNode"]):
 
 class _PipelineNodeSerializer(EntitySerializer):
     def _dump(self, pipeline_node):
-        log.info("\n\n[1]")
-        log.info(pipeline_node.operators)
+        # TODO: change operators to operator (singular) as thats the operator_plan and not the nodes
         result = {
                 "pipeline_id": pipeline_node.pipeline_id,
                 "predecessors": pipeline_node.predecessors or [],
