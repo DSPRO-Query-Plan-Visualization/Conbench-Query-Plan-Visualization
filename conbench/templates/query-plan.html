@@ -90,43 +90,95 @@
             return;
         }
 
-        // Clear the SVG before rendering
         const svg = d3.select("#svg");
         svg.selectAll("*").remove();
 
-        // Create a zoomable group
         const zoomableGroup = svg.append("g").attr("class", "zoomable-group");
-
-        // Setup zoom functionality exclusive to the SVG
         setupZoom(svg, zoomableGroup);
 
-        // Existing graph rendering logic
-        const nodes = planType === "logical"
-            ? planData.map(node => ({
+        let nodes;
+        if (planType === "logical") {
+            nodes = planData.map(node => ({
                 id: String(node.id),
                 label: node.label,
                 parentIds: (node.inputs || []).map(input => String(input)),
                 type: node.node_type || "Unknown"
-            }))
-            : planData.flatMap(pipeline => pipeline.operators.map(op => ({
-                id: String(op.id),
-                label: `${op.label} (Pipeline ${pipeline.pipelineId})`,
-                parentIds: (op.inputs || []).map(input => String(input)),
-                type: "Operator",
-                pipeline_id: pipeline.pipelineId
-            })));
+            }));
+        } else if (planType === "pipeline") {
+            // Group operators by pipeline_id
+            const groupedByPipelineId = d3.group(
+                planData.flatMap(pipeline =>
+                    pipeline.operators.map(op => ({
+                        id: String(op.id),
+                        label: `${op.label} (Pipeline ${pipeline.pipeline_id})`,
+                        parentIds: (op.inputs || []).map(input => String(input)),
+                        type: "Operator",
+                        pipeline_id: pipeline.pipeline_id
+                    }))
+                ),
+                d => d.pipeline_id
+            );
+
+            // Flatten back all nodes to a list for stratify, adding pipeline index info
+            const pipelineIds = Array.from(groupedByPipelineId.keys());
+            nodes = [];
+            groupedByPipelineId.forEach((nodesInPipeline, pipelineId) => {
+                nodesInPipeline.forEach(n => {
+                    nodes.push(n);
+                });
+            });
+
+            // Run layout on whole graph first
+        }
 
         const stratify = d3dag.graphStratify()
             .id(d => d.id)
             .parentIds(d => d.parentIds);
 
-        const graph = stratify(nodes);
+        let graph;
+        try {
+            graph = stratify(nodes);
+        } catch (e) {
+            console.error("Failed to stratify nodes:", e);
+            return;
+        }
 
         const layout = d3dag.sugiyama()
             .layering(d3dag.layeringTopological())
-            .nodeSize([120, 60])
+            .nodeSize([120, planType === "pipeline" ? 40 : 60])  // smaller vertical spacing only for pipeline plan
             .coord(d3dag.coordTopological());
         layout(graph);
+
+        if (planType === "pipeline") {
+            // Compress vertical spacing inside each pipeline group
+            const pipelineGroups = d3.group(graph.nodes(), d => d.data.pipeline_id);
+            const compressionRatio = 0.5; // adjust as needed
+
+            pipelineGroups.forEach((nodesInPipeline) => {
+                if (nodesInPipeline.length === 0) return;
+
+                const minY = d3.min(nodesInPipeline, d => d.y);
+
+                nodesInPipeline.forEach(node => {
+                    node.y = minY + (node.y - minY) * compressionRatio;
+                });
+            });
+
+            // Stack pipelines vertically
+            const verticalSpacing = 200;
+            const pipelineIndexMap = new Map();
+            Array.from(pipelineGroups.keys()).forEach((pid, idx) => {
+                pipelineIndexMap.set(pid, idx);
+            });
+
+            graph.nodes().forEach(node => {
+                const pipelineId = node.data.pipeline_id;
+                if (pipelineId !== undefined) {
+                    const groupIdx = pipelineIndexMap.get(pipelineId) || 0;
+                    node.y += groupIdx * verticalSpacing;
+                }
+            });
+        }
 
         // Draw edges
         const line = d3.line().curve(d3.curveMonotoneY);
