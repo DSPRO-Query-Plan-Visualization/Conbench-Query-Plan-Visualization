@@ -54,6 +54,8 @@
     const logicalQueryPlan = {{ benchmark.logical_query_plan | default('[]') | tojson }};
     const pipelineQueryPlan = {{ benchmark.pipeline_query_plan | default('[]') | tojson }};
 
+    console.log(pipelineQueryPlan);
+
     /**
      * Adds zoom and pan functionality exclusively for the graph SVG.
      * @param {Object} svg - The D3 selection of the SVG element.
@@ -121,6 +123,7 @@
         const graph = stratify(nodes);
 
         const layout = d3dag.sugiyama()
+            .layering(d3dag.layeringTopological())
             .nodeSize([120, 60])
             .coord(d3dag.coordTopological());
         layout(graph);
