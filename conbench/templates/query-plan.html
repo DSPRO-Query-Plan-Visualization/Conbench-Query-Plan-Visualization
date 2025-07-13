@@ -574,7 +574,7 @@
                     .attr("height", rectHeight)
                     .attr("x", -rectWidth / 2)
                     .attr("y", -rectHeight / 2)
-                    .attr("fill", getNodeColor(nodeData.nodeType))
+                    .attr("fill", colorMap.get(d.data))
                     .attr("class", "pipeline-node");
 
                 // Pipeline ID at the top
