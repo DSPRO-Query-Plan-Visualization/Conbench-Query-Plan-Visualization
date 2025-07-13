@@ -94,6 +94,15 @@
 
 {% block scripts %}
 <script type="module">
+
+    /**
+     *  The authors of this code are grateful for the d3 and d3-dag library extension by Erik Brinkman.
+     *  For a better visual understanding of the underlying library including the sugiyama layout, please see https://codepen.io/brinkbot .
+     *  The documentation can be found here: https://erikbrinkman.github.io/d3-dag/modules.html .
+     */
+
+
+
     import * as d3 from "https://cdn.skypack.dev/d3@7.8.4";
     import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.0.0-1";
 
@@ -188,7 +197,7 @@ function transformPipelinePlan(pipelinePlan) {
 }
 
     /**
-     * Get node data for logical plan
+     * Get node data for the logical plan visualization
      */
     function getLogicalNodeData(logicalPlan) {
         const nodeMap = new Map();
@@ -279,7 +288,7 @@ function transformPipelinePlan(pipelinePlan) {
         }
 
         // For other long operator names, use more aggressive wrapping
-        const words = text.split(/[\s()::]+/).filter(word => word.length > 0);
+        const words = text.split(/[\s():]+/).filter(word => word.length > 0);
         const lines = [];
         let currentLine = "";
 
