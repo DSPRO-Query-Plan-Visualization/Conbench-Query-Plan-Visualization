@@ -6,7 +6,7 @@
 
     #svg-container {
         width: 100%;
-        height: 1000px;
+        height: 1800px;
         border: 2px solid #202020;
         overflow: hidden;
     }
@@ -59,6 +59,15 @@
 
     .pipeline-node text {
         fill: black;
+    }
+
+    .operator-node circle {
+        stroke: #333;
+        stroke-width: 2px;
+    }
+
+    .operator-node text {
+        fill: white;
     }
 
     #reset-view {
@@ -183,7 +192,8 @@
                 id: String(node.id),
                 label: node.label,
                 nodeType: node.nodeType,
-                isPipeline: false
+                isPipeline: false,
+                isOperator: false
             });
         });
         return nodeMap;
@@ -202,6 +212,7 @@
                 label: `Pipeline ${pipeline.pipelineId}`,
                 nodeType: "Pipeline",
                 isPipeline: true,
+                isOperator: false,
                 incomingTuples: pipeline.incomingTuples
             });
         });
@@ -215,6 +226,7 @@
                         label: operator.label,
                         nodeType: "Operator",
                         isPipeline: false,
+                        isOperator: true,
                         pipelineId: pipeline.pipelineId
                     });
                 });
@@ -266,7 +278,42 @@
             lines.push(currentLine);
         }
 
-        return lines.slice(0, 4); // Limit to 4 lines
+        return lines.slice(0, 8); // Limit to 4 lines
+    }
+
+    /**
+     * Special text wrapping for operator nodes with very long names
+     */
+    function wrapOperatorText(text, width, lineHeight = 10) {
+        // First, try to extract the operator name from PhysicalOperator(NES::OperatorName)
+        const operatorMatch = text.match(/PhysicalOperator\(NES::(\w+)\)/);
+        if (operatorMatch) {
+            const operatorName = operatorMatch[1];
+            // Split camelCase names
+            const splitName = operatorName.replace(/([A-Z])/g, ' $1').trim();
+            return wrapText(splitName, width, lineHeight);
+        }
+        
+        // For other long operator names, use more aggressive wrapping
+        const words = text.split(/[\s\(\)::]+/).filter(word => word.length > 0);
+        const lines = [];
+        let currentLine = "";
+
+        for (const word of words) {
+            const testLine = currentLine + (currentLine ? " " : "") + word;
+            // More aggressive wrapping for operators - 4 pixels per character
+            if (testLine.length * 4 > width && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
+            }
+        }
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+
+        return lines.slice(0, 4); // Limit to 4 lines for better spacing
     }
 
     /**
@@ -397,9 +444,9 @@
         }
 
         // Set up layout
-        const nodeRadius = 80;
+        const nodeRadius = 100;
         const nodeSize = [nodeRadius * 2, nodeRadius * 2];
-        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeEllipse);
+        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeRect);
         const line = d3.line().curve(d3.curveMonotoneY);
 
         const layout = d3dag
@@ -485,8 +532,8 @@
         console.log("Links rendered:", linkPaths.size());
 
         // Add arrows
-        const arrowSize = 80;
-        const arrowLen = Math.sqrt((4 * arrowSize) / Math.sqrt(3));
+        const arrowSize = 180;
+        const arrowLen = arrowSize;
         const arrow = d3.symbol().type(d3.symbolTriangle).size(arrowSize);
 
         const arrowPaths = arrowsGroup
@@ -520,7 +567,7 @@
             if (nodeData && nodeData.isPipeline) {
                 // Pipeline nodes as larger rectangles
                 const rectWidth = nodeRadius * 2.5;
-                const rectHeight = nodeRadius * 1.2;
+                const rectHeight = nodeRadius * 1.5;
 
                 g.append("rect")
                     .attr("width", rectWidth)
@@ -530,56 +577,101 @@
                     .attr("fill", getNodeColor(nodeData.nodeType))
                     .attr("class", "pipeline-node");
 
-                // Pipeline label
+                // Pipeline ID at the top
                 g.append("text")
-                    .text(nodeData.label)
-                    .attr("class", "node-label")
-                    .attr("y", -5)
-                    .attr("font-size", "14px")
+                    .text(`ID: ${nodeData.id}`)
+                    .attr("class", "node-id")
+                    .attr("y", -rectHeight / 2 + 15)
+                    .attr("font-size", "11px")
+                    .attr("font-weight", "bold")
                     .attr("fill", "black");
 
-                // Pipeline tuples info
+                // Pipeline label - wrapped text
+                const labelLines = wrapText(nodeData.label, rectWidth * 0.9);
+                labelLines.forEach((line) => {
+                    g.append("text")
+                        .text(line)
+                        .attr("class", "node-label")
+                        .attr("y", -rectHeight / 2 + 30)
+                        .attr("font-size", "10px")
+                        .attr("font-weight", "normal")
+                        .attr("fill", "black");
+                });
+
+                // Pipeline tuples info at the bottom
                 if (nodeData.incomingTuples !== undefined) {
                     g.append("text")
                         .text(`Tuples: ${nodeData.incomingTuples.toLocaleString()}`)
                         .attr("class", "node-type")
-                        .attr("y", 10)
-                        .attr("font-size", "11px")
+                        .attr("y", rectHeight / 2 - 5)
+                        .attr("font-size", "9px")
+                        .attr("font-weight", "bold")
                         .attr("fill", "black");
                 }
 
             } else {
-                // Regular nodes as larger circles
+                // Regular nodes (both logical and operator nodes) as circles
                 g.append("circle")
                     .attr("r", nodeRadius)
-                    .attr("fill", colorMap.get(d.data));
+                    .attr("fill", colorMap.get(d.data))
+                    .attr("class", nodeData && nodeData.isOperator ? "operator-node" : "");
 
                 if (nodeData) {
-                    // Node type at the top
-                    g.append("text")
-                        .text(nodeData.nodeType || "Unknown")
-                        .attr("class", "node-type")
-                        .attr("y", -nodeRadius * 0.5)
-                        .attr("font-size", "12px")
-                        .attr("font-weight", "bold");
-
-                    // Node ID
-                    g.append("text")
-                        .text(`ID: ${nodeData.id}`)
-                        .attr("class", "node-id")
-                        .attr("y", -nodeRadius * 0.3)
-                        .attr("font-size", "10px");
-
-                    // Wrap and display the label
-                    const labelLines = wrapText(nodeData.label, nodeRadius * 1.6);
-                    labelLines.forEach((line, i) => {
+                    // For operator nodes, use different layout
+                    if (nodeData.isOperator) {
+                        // Operator node - compact layout
                         g.append("text")
-                            .text(line)
-                            .attr("class", "node-label")
-                            .attr("y", -10 + (i * 12))
-                            .attr("font-size", "10px")
-                            .attr("font-weight", "normal");
-                    });
+                            .text(`ID: ${nodeData.id}`)
+                            .attr("class", "node-id")
+                            .attr("y", -nodeRadius * 0.8)
+                            .attr("font-size", "9px")
+                            .attr("font-weight", "bold");
+
+                        // Use special operator text wrapping
+                        const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 1.4);
+                        const startY = -nodeRadius * 0.5;
+                        labelLines.forEach((line, i) => {
+                            g.append("text")
+                                .text(line)
+                                .attr("class", "node-label")
+                                .attr("y", startY + (i * 15))
+                                .attr("font-size", "8px")
+                                .attr("font-weight", "normal");
+                        });
+
+                        // Pipeline ID - positioned right after the label lines
+                        const pipelineY = startY + (labelLines.length * 15) + 5;
+                        g.append("text")
+                            .text(`Pipeline: ${nodeData.pipelineId}`)
+                            .attr("class", "node-type")
+                            .attr("y", pipelineY)
+                            .attr("font-size", "7px")
+                            .attr("font-weight", "bold");
+                    } else {
+                        // Regular logical node layout
+                        g.append("text")
+                            .text(nodeData.nodeType || "Unknown")
+                            .attr("class", "node-type")
+                            .attr("y", -nodeRadius * 0.5)
+                            .attr("font-size", "12px")
+                            .attr("font-weight", "bold");
+
+                        g.append("text")
+                            .text(`ID: ${nodeData.id}`)
+                            .attr("class", "node-id")
+                            .attr("y", -nodeRadius * 0.3)
+                            .attr("font-size", "10px");
+
+                        const labelLines = wrapText(nodeData.label, nodeRadius * 1.6);
+                        labelLines.forEach((line, i) => {
+                            g.append("text")
+                                .text(line)
+                                .attr("class", "node-label")
+                                .attr("y", -10 + (i * 12))
+                                .attr("font-size", "10px")
+                                .attr("font-weight", "normal");
+                        });
+                    }
                 } else {
                     g.append("text")
                         .text(d.data)
@@ -594,6 +686,9 @@
                     let tooltip = `ID: ${nodeData.id}\nType: ${nodeData.nodeType}\nLabel: ${nodeData.label}`;
                     if (nodeData.incomingTuples !== undefined) {
                         tooltip += `\nIncoming Tuples: ${nodeData.incomingTuples.toLocaleString()}`;
+                    }
+                    if (nodeData.pipelineId) {
+                        tooltip += `\nPipeline: ${nodeData.pipelineId}`;
                     }
                     return tooltip;
                 }
