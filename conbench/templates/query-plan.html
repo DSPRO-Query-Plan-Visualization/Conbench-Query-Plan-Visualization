@@ -157,22 +157,22 @@
     function transformPipelinePlan(pipelinePlan) {
         const links = [];
 
-        // First, create links based on pipeline successors
-        pipelinePlan.forEach(pipeline => {
-            if (pipeline.successors && pipeline.successors.length > 0) {
-                pipeline.successors.forEach(successorId => {
-                    links.push([String(pipeline.pipelineId), String(successorId)]);
+        // Create links based on pipeline successors (pipeline-to-pipeline connections)
+        pipelinePlan.forEach(pipelineNode => {
+            if (pipelineNode.successors && pipelineNode.successors.length > 0) {
+                pipelineNode.successors.forEach(successorId => {
+                    links.push([`pipeline_${pipelineNode.pipeline_id}`, `pipeline_${successorId}`]);
                 });
             }
         });
 
-        // Then, create links within each pipeline based on operator outputs
-        pipelinePlan.forEach(pipeline => {
-            if (pipeline.operators && pipeline.operators.length > 0) {
-                pipeline.operators.forEach(operator => {
+        // Create links within each pipeline based on operator outputs (operator-to-operator connections)
+        pipelinePlan.forEach(pipelineNode => {
+            if (pipelineNode.operators && pipelineNode.operators.length > 0) {
+                pipelineNode.operators.forEach(operator => {
                     if (operator.outputs && operator.outputs.length > 0) {
                         operator.outputs.forEach(outputId => {
-                            links.push([String(operator.id), String(outputId)]);
+                            links.push([`operator_${operator.id}`, `operator_${outputId}`]);
                         });
                     }
                 });
@@ -205,29 +205,29 @@
     function getPipelineNodeData(pipelinePlan) {
         const nodeMap = new Map();
 
-        // Add pipeline nodes
-        pipelinePlan.forEach(pipeline => {
-            nodeMap.set(String(pipeline.pipelineId), {
-                id: String(pipeline.pipelineId),
-                label: `Pipeline ${pipeline.pipelineId}`,
+        // Add pipeline nodes using pipeline_id
+        pipelinePlan.forEach(pipelineNode => {
+            nodeMap.set(`pipeline_${pipelineNode.pipeline_id}`, {
+                id: String(pipelineNode.pipeline_id),
+                label: `Pipeline ${pipelineNode.pipeline_id}`,
                 nodeType: "Pipeline",
                 isPipeline: true,
                 isOperator: false,
-                incomingTuples: pipeline.incomingTuples
+                incomingTuples: pipelineNode.incoming_tuples
             });
         });
 
-        // Add operator nodes
-        pipelinePlan.forEach(pipeline => {
-            if (pipeline.operators && pipeline.operators.length > 0) {
-                pipeline.operators.forEach(operator => {
-                    nodeMap.set(String(operator.id), {
+        // Add operator nodes with operator_ prefix
+        pipelinePlan.forEach(pipelineNode => {
+            if (pipelineNode.operators && pipelineNode.operators.length > 0) {
+                pipelineNode.operators.forEach(operator => {
+                    nodeMap.set(`operator_${operator.id}`, {
                         id: String(operator.id),
                         label: operator.label,
                         nodeType: "Operator",
                         isPipeline: false,
                         isOperator: true,
-                        pipelineId: pipeline.pipelineId
+                        pipelineId: pipelineNode.pipeline_id
                     });
                 });
             }
@@ -278,7 +278,7 @@
             lines.push(currentLine);
         }
 
-        return lines.slice(0, 8); // Limit to 4 lines
+        return lines.slice(0, 4); // Limit to 4 lines
     }
 
     /**
@@ -444,9 +444,9 @@
         }
 
         // Set up layout
-        const nodeRadius = 100;
+        const nodeRadius = 80;
         const nodeSize = [nodeRadius * 2, nodeRadius * 2];
-        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeRect);
+        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeEllipse);
         const line = d3.line().curve(d3.curveMonotoneY);
 
         const layout = d3dag
@@ -532,8 +532,8 @@
         console.log("Links rendered:", linkPaths.size());
 
         // Add arrows
-        const arrowSize = 180;
-        const arrowLen = arrowSize;
+        const arrowSize = 80;
+        const arrowLen = Math.sqrt((4 * arrowSize) / Math.sqrt(3));
         const arrow = d3.symbol().type(d3.symbolTriangle).size(arrowSize);
 
         const arrowPaths = arrowsGroup
@@ -588,11 +588,11 @@
 
                 // Pipeline label - wrapped text
                 const labelLines = wrapText(nodeData.label, rectWidth * 0.9);
-                labelLines.forEach((line) => {
+                labelLines.forEach((line, i) => {
                     g.append("text")
                         .text(line)
                         .attr("class", "node-label")
-                        .attr("y", -rectHeight / 2 + 30)
+                        .attr("y", -rectHeight / 2 + 35 + (i * 12))
                         .attr("font-size", "10px")
                         .attr("font-weight", "normal")
                         .attr("fill", "black");
@@ -619,55 +619,73 @@
                 if (nodeData) {
                     // For operator nodes, use different layout
                     if (nodeData.isOperator) {
-                        // Operator node - compact layout
+                        // Operator node - calculate total height and center it
+                        const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 1.4);
+                        
+                        // Calculate total height of all text elements
+                        const idHeight = 9; // font-size
+                        const labelHeight = labelLines.length * 10; // 10px per line
+                        const pipelineHeight = 7; // font-size
+                        const totalHeight = idHeight + labelHeight + pipelineHeight + 10; // 10px for spacing
+                        
+                        // Start from center and work up/down
+                        const startY = -totalHeight / 2 + idHeight / 2;
+                        
                         g.append("text")
                             .text(`ID: ${nodeData.id}`)
                             .attr("class", "node-id")
-                            .attr("y", -nodeRadius * 0.8)
+                            .attr("y", startY)
                             .attr("font-size", "9px")
                             .attr("font-weight", "bold");
 
-                        // Use special operator text wrapping
-                        const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 1.4);
-                        const startY = -nodeRadius * 0.5;
+                        // Label lines
                         labelLines.forEach((line, i) => {
                             g.append("text")
                                 .text(line)
                                 .attr("class", "node-label")
-                                .attr("y", startY + (i * 15))
+                                .attr("y", startY + idHeight + 5 + (i * 10))
                                 .attr("font-size", "8px")
                                 .attr("font-weight", "normal");
                         });
 
-                        // Pipeline ID - positioned right after the label lines
-                        const pipelineY = startY + (labelLines.length * 15) + 5;
+                        // Pipeline ID
                         g.append("text")
                             .text(`Pipeline: ${nodeData.pipelineId}`)
                             .attr("class", "node-type")
-                            .attr("y", pipelineY)
+                            .attr("y", startY + idHeight + 5 + labelHeight + 5)
                             .attr("font-size", "7px")
                             .attr("font-weight", "bold");
                     } else {
-                        // Regular logical node layout
+                        // Regular logical node - calculate total height and center it
+                        const labelLines = wrapText(nodeData.label, nodeRadius * 1.6);
+                        
+                        // Calculate total height
+                        const typeHeight = 12; // font-size
+                        const idHeight = 10; // font-size
+                        const labelHeight = labelLines.length * 12; // 12px per line
+                        const totalHeight = typeHeight + idHeight + labelHeight + 10; // 10px for spacing
+                        
+                        // Start from center and work up/down
+                        const startY = -totalHeight / 2 + typeHeight / 2;
+                        
                         g.append("text")
                             .text(nodeData.nodeType || "Unknown")
                             .attr("class", "node-type")
-                            .attr("y", -nodeRadius * 0.5)
+                            .attr("y", startY)
                             .attr("font-size", "12px")
                             .attr("font-weight", "bold");
 
                         g.append("text")
                             .text(`ID: ${nodeData.id}`)
                             .attr("class", "node-id")
-                            .attr("y", -nodeRadius * 0.3)
+                            .attr("y", startY + typeHeight + 5)
                             .attr("font-size", "10px");
 
-                        const labelLines = wrapText(nodeData.label, nodeRadius * 1.6);
                         labelLines.forEach((line, i) => {
                             g.append("text")
                                 .text(line)
                                 .attr("class", "node-label")
-                                .attr("y", -10 + (i * 12))
+                                .attr("y", startY + typeHeight + idHeight + 5 + (i * 12))
                                 .attr("font-size", "10px")
                                 .attr("font-weight", "normal");
                         });
