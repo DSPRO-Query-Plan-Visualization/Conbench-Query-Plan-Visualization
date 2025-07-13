@@ -715,6 +715,7 @@ function transformPipelinePlan(pipelinePlan) {
     document.addEventListener("DOMContentLoaded", () => {
         const selector = document.getElementById("plan-selector");
         const resetButton = document.getElementById("reset-view");
+        selector.value = "logical";
 
         console.log("DOM loaded, starting visualization...");
 
