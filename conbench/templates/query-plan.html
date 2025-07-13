@@ -152,42 +152,53 @@
     /**
      * Transform pipeline plan data to d3-dag format
      */
-    function transformPipelinePlan(pipelinePlan) {
-        const links = [];
-
-        // 1. Pipeline-to-pipeline connections
-        pipelinePlan.forEach(pipelineNode => {
-            if (pipelineNode.successors && pipelineNode.successors.length > 0) {
-                pipelineNode.successors.forEach(successorId => {
-                    links.push([`pipeline_${pipelineNode.pipeline_id}`, `pipeline_${successorId}`]);
-                });
+function transformPipelinePlan(pipelinePlan) {
+    const links = [];
+    
+    // 1. Pipeline-to-pipeline connections
+    pipelinePlan.forEach(pipelineNode => {
+        if (pipelineNode.successors && pipelineNode.successors.length > 0) {
+            pipelineNode.successors.forEach(successorId => {
+                links.push([`pipeline_${pipelineNode.pipeline_id}`, `pipeline_${successorId}`]);
+            });
+        }
+    });
+    
+    // 2. Pipeline-to-operator connections (ONLY to first operator)
+    pipelinePlan.forEach(pipelineNode => {
+        if (pipelineNode.operators && pipelineNode.operators.length > 0) {
+            // Find the first operator (one with no inputs from other operators in this pipeline)
+            const operatorIds = new Set(pipelineNode.operators.map(op => op.id));
+            const firstOperator = pipelineNode.operators.find(operator => {
+                // An operator is "first" if it has no inputs OR all its inputs are from outside this pipeline
+                return !operator.inputs || operator.inputs.length === 0 || 
+                       !operator.inputs.some(inputId => operatorIds.has(inputId));
+            });
+            
+            if (firstOperator) {
+                links.push([`pipeline_${pipelineNode.pipeline_id}`, `operator_${firstOperator.id}`]);
+            } else {
+                // Fallback: connect to the first operator in the array
+                links.push([`pipeline_${pipelineNode.pipeline_id}`, `operator_${pipelineNode.operators[0].id}`]);
             }
-        });
-
-        // 2. Pipeline-to-operator connections (NEW!)
-        pipelinePlan.forEach(pipelineNode => {
-            if (pipelineNode.operators && pipelineNode.operators.length > 0) {
-                pipelineNode.operators.forEach(operator => {
-                    links.push([`pipeline_${pipelineNode.pipeline_id}`, `operator_${operator.id}`]);
-                });
-            }
-        });
-
-        // Create links within each pipeline based on operator outputs (operator-to-operator connections)
-        pipelinePlan.forEach(pipelineNode => {
-            if (pipelineNode.operators && pipelineNode.operators.length > 0) {
-                pipelineNode.operators.forEach(operator => {
-                    if (operator.outputs && operator.outputs.length > 0) {
-                        operator.outputs.forEach(outputId => {
-                            links.push([`operator_${operator.id}`, `operator_${outputId}`]);
-                        });
-                    }
-                });
-            }
-        });
-
-        return links;
-    }
+        }
+    });
+    
+    // 3. Operator-to-operator connections within pipelines
+    pipelinePlan.forEach(pipelineNode => {
+        if (pipelineNode.operators && pipelineNode.operators.length > 0) {
+            pipelineNode.operators.forEach(operator => {
+                if (operator.outputs && operator.outputs.length > 0) {
+                    operator.outputs.forEach(outputId => {
+                        links.push([`operator_${operator.id}`, `operator_${outputId}`]);
+                    });
+                }
+            });
+        }
+    });
+    
+    return links;
+}
 
     /**
      * Get node data for logical plan
@@ -281,7 +292,7 @@
         }
 
         // For other long operator names, use more aggressive wrapping
-        const words = text.split(/[\s(\)::]+/).filter(word => word.length > 0);
+        const words = text.split(/[\s()::]+/).filter(word => word.length > 0);
         const lines = [];
         let currentLine = "";
 
@@ -430,9 +441,9 @@
         }
 
         // Set up layout
-        const nodeRadius = 80;
+        const nodeRadius = 100;
         const nodeSize = [nodeRadius * 2, nodeRadius * 2];
-        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeEllipse);
+        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeRect);
         const line = d3.line().curve(d3.curveMonotoneY);
 
         const layout = d3dag
@@ -606,7 +617,7 @@
                     // For operator nodes, use different layout
                     if (nodeData.isOperator) {
                         // Operator node - calculate total height and center it
-                        const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 1.4);
+                        const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 0.9);
 
                         // Calculate total height of all text elements
                         const idHeight = 9; // font-size
@@ -643,7 +654,7 @@
                             .attr("font-weight", "bold");
                     } else {
                         // Regular logical node - calculate total height and center it
-                        const labelLines = wrapText(nodeData.label, nodeRadius);
+                        const labelLines = wrapText(nodeData.label, nodeRadius * 0.8);
 
                         // Calculate total height
                         const typeHeight = 12; // font-size
