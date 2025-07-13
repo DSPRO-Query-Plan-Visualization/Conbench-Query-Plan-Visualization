@@ -6,7 +6,7 @@
 
     #svg-container {
         width: 100%;
-        height: 1800px;
+        height: 900px;
         border: 2px solid #202020;
         overflow: hidden;
     }
@@ -126,9 +126,7 @@
     /**
      * get transform for arrow rendering
      */
-    function arrowTransform({
-                                points
-                            }) {
+    function arrowTransform({points}) {
         const [[x1, y1], [x2, y2]] = points.slice(-2);
         const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI + 90;
         return `translate(${x2}, ${y2}) rotate(${angle})`;
@@ -157,11 +155,20 @@
     function transformPipelinePlan(pipelinePlan) {
         const links = [];
 
-        // Create links based on pipeline successors (pipeline-to-pipeline connections)
+        // 1. Pipeline-to-pipeline connections
         pipelinePlan.forEach(pipelineNode => {
             if (pipelineNode.successors && pipelineNode.successors.length > 0) {
                 pipelineNode.successors.forEach(successorId => {
                     links.push([`pipeline_${pipelineNode.pipeline_id}`, `pipeline_${successorId}`]);
+                });
+            }
+        });
+
+        // 2. Pipeline-to-operator connections (NEW!)
+        pipelinePlan.forEach(pipelineNode => {
+            if (pipelineNode.operators && pipelineNode.operators.length > 0) {
+                pipelineNode.operators.forEach(operator => {
+                    links.push([`pipeline_${pipelineNode.pipeline_id}`, `operator_${operator.id}`]);
                 });
             }
         });
@@ -235,27 +242,6 @@
 
         return nodeMap;
     }
-
-    /**
-     * Get node color based on type
-     */
-    function getNodeColor(nodeType) {
-        const colors = {
-            "Source": "#99ccff",
-            "Sink": "#ff9999",
-            "Filter": "#c0c0c0",
-            "Selection": "#4682b4",
-            "Map": "#98fb98",
-            "Projection": "#dda0dd",
-            "WindowedAggregation": "#ffa500",
-            "EventTimeWatermarkAssigner": "#ba55d3",
-            "Operator": "#d8bfd8",
-            "Pipeline": "#e6e6fa",
-            "Unknown": "#cccccc"
-        };
-        return colors[nodeType] || "#cccccc";
-    }
-
     /**
      * Wrap text to fit within node bounds
      */
@@ -267,7 +253,7 @@
         for (const word of words) {
             const testLine = currentLine + (currentLine ? " " : "") + word;
             // Rough estimate: 6 pixels per character
-            if (testLine.length * 6 > width && currentLine) {
+            if (testLine.length * 3> width && currentLine) {
                 lines.push(currentLine);
                 currentLine = word;
             } else {
@@ -278,7 +264,7 @@
             lines.push(currentLine);
         }
 
-        return lines.slice(0, 4); // Limit to 4 lines
+        return lines.slice(0, 8); // Limit to 8 lines
     }
 
     /**
@@ -293,9 +279,9 @@
             const splitName = operatorName.replace(/([A-Z])/g, ' $1').trim();
             return wrapText(splitName, width, lineHeight);
         }
-        
+
         // For other long operator names, use more aggressive wrapping
-        const words = text.split(/[\s\(\)::]+/).filter(word => word.length > 0);
+        const words = text.split(/[\s(\)::]+/).filter(word => word.length > 0);
         const lines = [];
         let currentLine = "";
 
@@ -321,7 +307,7 @@
      */
     function initializeZoom() {
         if (isZoomInitialized) return;
-        
+
         zoomBehavior = d3.zoom()
             .scaleExtent([0.1, 10])
             .on("zoom", (event) => {
@@ -347,7 +333,7 @@
             try {
                 const bounds = mainGroup.node().getBBox();
                 console.log("Bounds:", bounds);
-                
+
                 const parent = svg.node().parentNode;
                 const fullWidth = parent.clientWidth;
                 const fullHeight = parent.clientHeight;
@@ -359,17 +345,17 @@
 
                 if (width === 0 || height === 0) {
                     console.log("Cannot reset view - bounds are zero, trying alternative method");
-                    
+
                     // Alternative: use the layout dimensions we know
                     const layoutWidth = window.currentLayoutWidth || 400;
                     const layoutHeight = window.currentLayoutHeight || 800;
-                    
+
                     const scale = Math.min(fullWidth / layoutWidth, fullHeight / layoutHeight) * 0.8;
                     const translate = [
                         (fullWidth - layoutWidth * scale) / 2,
                         (fullHeight - layoutHeight * scale) / 2
                     ];
-                    
+
                     svg.transition()
                         .duration(750)
                         .call(zoomBehavior.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
@@ -434,7 +420,7 @@
         // Create d3-dag builder and graph
         const builder = d3dag.graphConnect();
         let graph;
-        
+
         try {
             graph = builder(links);
             console.log("Graph created successfully. Nodes:", graph.nnodes(), "Links:", graph.nlinks());
@@ -450,9 +436,9 @@
         const line = d3.line().curve(d3.curveMonotoneY);
 
         const layout = d3dag
-            .zherebko()
+            .sugiyama()
             .nodeSize(nodeSize)
-            .gap([nodeRadius / 2, nodeRadius / 2])
+            .gap([nodeRadius / 1.5, nodeRadius / 1.5])
             .tweaks([shape]);
 
         // Perform layout
@@ -509,7 +495,7 @@
         gradients.append("stop")
             .attr("offset", "0%")
             .attr("stop-color", d => colorMap.get(d.source.data));
-        
+
         gradients.append("stop")
             .attr("offset", "100%")
             .attr("stop-color", d => colorMap.get(d.target.data));
@@ -621,16 +607,16 @@
                     if (nodeData.isOperator) {
                         // Operator node - calculate total height and center it
                         const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 1.4);
-                        
+
                         // Calculate total height of all text elements
                         const idHeight = 9; // font-size
                         const labelHeight = labelLines.length * 10; // 10px per line
                         const pipelineHeight = 7; // font-size
-                        const totalHeight = idHeight + labelHeight + pipelineHeight + 10; // 10px for spacing
-                        
+                        const totalHeight = idHeight + labelHeight + pipelineHeight + 12; // 10px for spacing
+
                         // Start from center and work up/down
                         const startY = -totalHeight / 2 + idHeight / 2;
-                        
+
                         g.append("text")
                             .text(`ID: ${nodeData.id}`)
                             .attr("class", "node-id")
@@ -657,17 +643,17 @@
                             .attr("font-weight", "bold");
                     } else {
                         // Regular logical node - calculate total height and center it
-                        const labelLines = wrapText(nodeData.label, nodeRadius * 1.6);
-                        
+                        const labelLines = wrapText(nodeData.label, nodeRadius);
+
                         // Calculate total height
                         const typeHeight = 12; // font-size
                         const idHeight = 10; // font-size
                         const labelHeight = labelLines.length * 12; // 12px per line
                         const totalHeight = typeHeight + idHeight + labelHeight + 10; // 10px for spacing
-                        
+
                         // Start from center and work up/down
                         const startY = -totalHeight / 2 + typeHeight / 2;
-                        
+
                         g.append("text")
                             .text(nodeData.nodeType || "Unknown")
                             .attr("class", "node-type")
@@ -685,7 +671,7 @@
                             g.append("text")
                                 .text(line)
                                 .attr("class", "node-label")
-                                .attr("y", startY + typeHeight + idHeight + 5 + (i * 12))
+                                .attr("y", startY + typeHeight + idHeight + 10 + (i * 12))
                                 .attr("font-size", "10px")
                                 .attr("font-weight", "normal");
                         });
