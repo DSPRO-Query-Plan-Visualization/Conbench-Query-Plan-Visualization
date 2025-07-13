@@ -29,22 +29,6 @@
         alignment-baseline: middle;
     }
 
-    .node-label {
-        font-size: 12px;
-        fill: white;
-    }
-
-    .node-type {
-        font-size: 10px;
-        fill: white;
-        font-weight: bold;
-    }
-
-    .node-id {
-        font-size: 10px;
-        fill: white;
-    }
-
     .node circle {
         stroke: white;
         stroke-width: 2px;
@@ -129,6 +113,9 @@
     function arrowTransform({points}) {
         const [[x1, y1], [x2, y2]] = points.slice(-2);
         const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI + 90;
+        if (angle === 180) {
+            return `translate(${x2}, ${y2-10}) rotate(${angle})`;
+        }
         return `translate(${x2}, ${y2}) rotate(${angle})`;
     }
 
@@ -164,7 +151,7 @@ function transformPipelinePlan(pipelinePlan) {
         }
     });
     
-    // 2. Pipeline-to-operator connections (ONLY to first operator)
+    // 2. Pipeline-to-operator connections (ONLY to the first operator)
     pipelinePlan.forEach(pipelineNode => {
         if (pipelineNode.operators && pipelineNode.operators.length > 0) {
             // Find the first operator (one with no inputs from other operators in this pipeline)
@@ -256,7 +243,7 @@ function transformPipelinePlan(pipelinePlan) {
     /**
      * Wrap text to fit within node bounds
      */
-    function wrapText(text, width, lineHeight = 12) {
+    function wrapText(text, width) {
         const words = text.split(/\s+/);
         const lines = [];
         let currentLine = "";
@@ -264,7 +251,7 @@ function transformPipelinePlan(pipelinePlan) {
         for (const word of words) {
             const testLine = currentLine + (currentLine ? " " : "") + word;
             // Rough estimate: 6 pixels per character
-            if (testLine.length * 3> width && currentLine) {
+            if (testLine.length * 3 > width && currentLine) {
                 lines.push(currentLine);
                 currentLine = word;
             } else {
@@ -275,20 +262,20 @@ function transformPipelinePlan(pipelinePlan) {
             lines.push(currentLine);
         }
 
-        return lines.slice(0, 8); // Limit to 8 lines
+        return lines.slice(0, 12); // Limit to 12 lines, or most likely Arguments
     }
 
     /**
      * Special text wrapping for operator nodes with very long names
      */
-    function wrapOperatorText(text, width, lineHeight = 10) {
+    function wrapOperatorText(text, width) {
         // First, try to extract the operator name from PhysicalOperator(NES::OperatorName)
         const operatorMatch = text.match(/PhysicalOperator\(NES::(\w+)\)/);
         if (operatorMatch) {
             const operatorName = operatorMatch[1];
             // Split camelCase names
             const splitName = operatorName.replace(/([A-Z])/g, ' $1').trim();
-            return wrapText(splitName, width, lineHeight);
+            return wrapText(splitName, width);
         }
 
         // For other long operator names, use more aggressive wrapping
@@ -382,7 +369,7 @@ function transformPipelinePlan(pipelinePlan) {
             } catch (error) {
                 console.error("Error in resetView:", error);
             }
-        }, 200);
+        }, 50);
     }
 
     /**
@@ -441,7 +428,7 @@ function transformPipelinePlan(pipelinePlan) {
         }
 
         // Set up layout
-        const nodeRadius = 100;
+        const nodeRadius = 85;
         const nodeSize = [nodeRadius * 2, nodeRadius * 2];
         const shape = d3dag.tweakShape(nodeSize, d3dag.shapeRect);
         const line = d3.line().curve(d3.curveMonotoneY);
@@ -529,7 +516,7 @@ function transformPipelinePlan(pipelinePlan) {
         console.log("Links rendered:", linkPaths.size());
 
         // Add arrows
-        const arrowSize = 80;
+        const arrowSize = 120;
         const arrowLen = Math.sqrt((4 * arrowSize) / Math.sqrt(3));
         const arrow = d3.symbol().type(d3.symbolTriangle).size(arrowSize);
 
@@ -576,7 +563,7 @@ function transformPipelinePlan(pipelinePlan) {
 
                 // Pipeline ID at the top
                 g.append("text")
-                    .text(`ID: ${nodeData.id}`)
+                    .text(`Pipeline ID: ${nodeData.id}`)
                     .attr("class", "node-id")
                     .attr("y", -rectHeight / 2 + 15)
                     .attr("font-size", "11px")
@@ -619,20 +606,20 @@ function transformPipelinePlan(pipelinePlan) {
                         // Operator node - calculate total height and center it
                         const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 0.9);
 
-                        // Calculate total height of all text elements
-                        const idHeight = 9; // font-size
+                        // Calculate the total height of all text elements
+                        const idHeight = 10; // font-size
                         const labelHeight = labelLines.length * 10; // 10px per line
-                        const pipelineHeight = 7; // font-size
-                        const totalHeight = idHeight + labelHeight + pipelineHeight + 12; // 10px for spacing
+                        const pipelineHeight = 10; // font-size
+                        const totalHeight = idHeight + labelHeight + pipelineHeight + 12; // 12px for spacing
 
-                        // Start from center and work up/down
+                        // Start from a center and work up/down
                         const startY = -totalHeight / 2 + idHeight / 2;
 
                         g.append("text")
                             .text(`ID: ${nodeData.id}`)
                             .attr("class", "node-id")
                             .attr("y", startY)
-                            .attr("font-size", "9px")
+                            .attr("font-size", "10px")
                             .attr("font-weight", "bold");
 
                         // Label lines
@@ -641,7 +628,7 @@ function transformPipelinePlan(pipelinePlan) {
                                 .text(line)
                                 .attr("class", "node-label")
                                 .attr("y", startY + idHeight + 5 + (i * 10))
-                                .attr("font-size", "8px")
+                                .attr("font-size", "10px")
                                 .attr("font-weight", "normal");
                         });
 
@@ -650,7 +637,7 @@ function transformPipelinePlan(pipelinePlan) {
                             .text(`Pipeline: ${nodeData.pipelineId}`)
                             .attr("class", "node-type")
                             .attr("y", startY + idHeight + 5 + labelHeight + 5)
-                            .attr("font-size", "7px")
+                            .attr("font-size", "10px")
                             .attr("font-weight", "bold");
                     } else {
                         // Regular logical node - calculate total height and center it
@@ -662,15 +649,8 @@ function transformPipelinePlan(pipelinePlan) {
                         const labelHeight = labelLines.length * 12; // 12px per line
                         const totalHeight = typeHeight + idHeight + labelHeight + 10; // 10px for spacing
 
-                        // Start from center and work up/down
+                        // Start from a center and work up/down
                         const startY = -totalHeight / 2 + typeHeight / 2;
-
-                        g.append("text")
-                            .text(nodeData.nodeType || "Unknown")
-                            .attr("class", "node-type")
-                            .attr("y", startY)
-                            .attr("font-size", "12px")
-                            .attr("font-weight", "bold");
 
                         g.append("text")
                             .text(`ID: ${nodeData.id}`)
@@ -717,9 +697,9 @@ function transformPipelinePlan(pipelinePlan) {
         // Initialize zoom AFTER rendering is complete
         setTimeout(() => {
             initializeZoom();
-            // Auto-fit the view after zoom is initialized
+            // Auto-fit the view after Zoom is initialized
             resetView();
-        }, 100);
+        }, 250);
     }
 
     // Initialize the visualization
