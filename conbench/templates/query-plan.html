@@ -1,33 +1,58 @@
 {% block head %}
 <style>
-    html, body {
-        height: 100%;
-        margin: 0;
-        padding: 20px;
-        font-family: Arial, sans-serif;
-    }
-
-    body {
-        display: flex;
-        align-items: flex-start;
-        justify-content: center;
-        flex-direction: column;
-    }
-
     #control-panel {
         margin-bottom: 20px;
     }
 
     #svg-container {
         width: 100%;
-        height: 600px;
-        border: 1px solid #ccc;
-        overflow: auto;
+        height: 1800px;
+        border: 2px solid #202020;
     }
 
     svg {
         width: 100%;
         height: 100%;
+    }
+
+    .node text {
+        font-family: sans-serif;
+        font-weight: bold;
+        fill: white;
+        text-anchor: middle;
+        alignment-baseline: middle;
+    }
+
+    .node-label {
+        font-size: 12px;
+        fill: white;
+    }
+
+    .node-type {
+        font-size: 10px;
+        fill: white;
+        font-weight: bold;
+    }
+
+    .node-id {
+        font-size: 10px;
+        fill: white;
+    }
+
+    .node circle {
+        stroke: white;
+        stroke-width: 2px;
+    }
+
+    .pipeline-node rect {
+        stroke: #333;
+        stroke-width: 2px;
+        rx: 8;
+        ry: 8;
+    }
+
+    .pipeline-node text {
+        fill: black;
     }
 </style>
 {% endblock %}
@@ -42,204 +67,136 @@
 </div>
 
 <div id="svg-container">
-    <svg id="svg"></svg>
+    <svg id="svg">
+        <defs id="defs"></defs>
+        <g id="links"></g>
+        <g id="arrows"></g>
+        <g id="nodes"></g>
+    </svg>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script type="module">
     import * as d3 from "https://cdn.skypack.dev/d3@7.8.4";
-    import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.1.0";
+    import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.0.0-1";
 
     const logicalQueryPlan = {{ benchmark.logical_query_plan | default('[]') | tojson }};
     const pipelineQueryPlan = {{ benchmark.pipeline_query_plan | default('[]') | tojson }};
 
-    console.log(pipelineQueryPlan);
+    console.log("Logical Plan:", logicalQueryPlan);
+    console.log("Pipeline Plan:", pipelineQueryPlan);
 
     /**
-     * Adds zoom and pan functionality exclusively for the graph SVG.
-     * @param {Object} svg - The D3 selection of the SVG element.
-     * @param {Object} zoomableGroup - The <g> group that contains the graph elements.
+     * get transform for arrow rendering
      */
-    function setupZoom(svg, zoomableGroup) {
-        const zoomBehavior = d3.zoom()
-            .scaleExtent([0.1, 2]) // Set zoom limits to 50% to 500% scaling
-            .on("zoom", (event) => {
-                // Apply the zoom transformation to the zoomable group
-                zoomableGroup.attr("transform", event.transform);
-            });
-
-        // Activate zoom only when interacting with the SVG
-        svg.on("mouseover", () => {
-            svg.call(zoomBehavior); // Enable zoom behavior
-        });
-
-        svg.on("mouseleave", () => {
-            svg.on(".zoom", null); // Disable zoom behavior
-        });
+    function arrowTransform({
+                                points
+                            }) {
+        const [[x1, y1], [x2, y2]] = points.slice(-2);
+        const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI + 90;
+        return `translate(${x2}, ${y2}) rotate(${angle})`;
     }
 
     /**
-     * Draws the graph visualization and sets up the zoom behavior.
-     * @param {string} planType - Type of the plan (logical or pipeline).
-     * @param {Array} planData - The input data to render the graph.
+     * Transform logical plan data to d3-dag format
      */
-    function drawGraph(planType, planData) {
-        if (!Array.isArray(planData) || planData.length === 0) {
-            console.error(`No data found for ${planType}!`);
-            return;
-        }
+    function transformLogicalPlan(logicalPlan) {
+        const links = [];
 
-        const svg = d3.select("#svg");
-        svg.selectAll("*").remove();
+        logicalPlan.forEach(node => {
+            if (node.outputs && node.outputs.length > 0) {
+                node.outputs.forEach(outputId => {
+                    links.push([String(node.id), String(outputId)]);
+                });
+            }
+        });
 
-        const zoomableGroup = svg.append("g").attr("class", "zoomable-group");
-        setupZoom(svg, zoomableGroup);
+        return links;
+    }
 
-        let nodes;
-        if (planType === "logical") {
-            nodes = planData.map(node => ({
+    /**
+     * Transform pipeline plan data to d3-dag format
+     */
+    function transformPipelinePlan(pipelinePlan) {
+        const links = [];
+
+        // First, create links based on pipeline successors
+        pipelinePlan.forEach(pipeline => {
+            if (pipeline.successors && pipeline.successors.length > 0) {
+                pipeline.successors.forEach(successorId => {
+                    links.push([String(pipeline.pipelineId), String(successorId)]);
+                });
+            }
+        });
+
+        // Then, create links within each pipeline based on operator outputs
+        pipelinePlan.forEach(pipeline => {
+            pipeline.operators.forEach(operator => {
+                if (operator.outputs && operator.outputs.length > 0) {
+                    operator.outputs.forEach(outputId => {
+                        links.push([String(operator.id), String(outputId)]);
+                    });
+                }
+            });
+        });
+
+        return links;
+    }
+
+    /**
+     * Get node data for logical plan
+     */
+    function getLogicalNodeData(logicalPlan) {
+        const nodeMap = new Map();
+        logicalPlan.forEach(node => {
+            nodeMap.set(String(node.id), {
                 id: String(node.id),
                 label: node.label,
-                parentIds: (node.inputs || []).map(input => String(input)),
-                type: node.node_type || "Unknown"
-            }));
-        } else if (planType === "pipeline") {
-            // Group operators by pipeline_id
-            const groupedByPipelineId = d3.group(
-                planData.flatMap(pipeline =>
-                    pipeline.operators.map(op => ({
-                        id: String(op.id),
-                        label: `${op.label} (Pipeline ${pipeline.pipeline_id})`,
-                        parentIds: (op.inputs || []).map(input => String(input)),
-                        type: "Operator",
-                        pipeline_id: pipeline.pipeline_id
-                    }))
-                ),
-                d => d.pipeline_id
-            );
-
-            // Flatten back all nodes to a list for stratify, adding pipeline index info
-            const pipelineIds = Array.from(groupedByPipelineId.keys());
-            nodes = [];
-            groupedByPipelineId.forEach((nodesInPipeline, pipelineId) => {
-                nodesInPipeline.forEach(n => {
-                    nodes.push(n);
-                });
+                nodeType: node.nodeType,
+                isPipeline: false
             });
-
-            // Run layout on whole graph first
-        }
-
-        const stratify = d3dag.graphStratify()
-            .id(d => d.id)
-            .parentIds(d => d.parentIds);
-
-        let graph;
-        try {
-            graph = stratify(nodes);
-        } catch (e) {
-            console.error("Failed to stratify nodes:", e);
-            return;
-        }
-
-        const layout = d3dag.sugiyama()
-            .layering(d3dag.layeringTopological())
-            .nodeSize([120, planType === "pipeline" ? 40 : 60])  // smaller vertical spacing only for pipeline plan
-            .coord(d3dag.coordTopological());
-        layout(graph);
-
-        if (planType === "pipeline") {
-            // Compress vertical spacing inside each pipeline group
-            const pipelineGroups = d3.group(graph.nodes(), d => d.data.pipeline_id);
-            const compressionRatio = 0.5; // adjust as needed
-
-            pipelineGroups.forEach((nodesInPipeline) => {
-                if (nodesInPipeline.length === 0) return;
-
-                const minY = d3.min(nodesInPipeline, d => d.y);
-
-                nodesInPipeline.forEach(node => {
-                    node.y = minY + (node.y - minY) * compressionRatio;
-                });
-            });
-
-            // Stack pipelines vertically
-            const verticalSpacing = 200;
-            const pipelineIndexMap = new Map();
-            Array.from(pipelineGroups.keys()).forEach((pid, idx) => {
-                pipelineIndexMap.set(pid, idx);
-            });
-
-            graph.nodes().forEach(node => {
-                const pipelineId = node.data.pipeline_id;
-                if (pipelineId !== undefined) {
-                    const groupIdx = pipelineIndexMap.get(pipelineId) || 0;
-                    node.y += groupIdx * verticalSpacing;
-                }
-            });
-        }
-
-        // Draw edges
-        const line = d3.line().curve(d3.curveMonotoneY);
-        zoomableGroup.selectAll("path")
-            .data(graph.links())
-            .join("path")
-            .attr("d", d => line(d.points))
-            .attr("fill", "none")
-            .attr("stroke", "#aaa")
-            .attr("stroke-width", 2);
-
-        // Draw nodes with rectangular shapes
-        zoomableGroup.selectAll("g")
-            .data(graph.nodes())
-            .join("g")
-            .attr("class", "node")
-            .attr("transform", d => `translate(${d.x},${d.y})`)
-            .each(function (d) {
-                const g = d3.select(this);
-
-                const labelText = d.data.label || "Unnamed";
-                const text = g.append("text")
-                    .text(d.data.label || "Unnamed")
-                    .attr("text-anchor", "middle")
-                    .attr("y", 10)
-                    .style("fill", "black")
-                    .style("font-size", "12px");
-
-                const textWidth = text.node().getBBox().width;
-                const boxPadding = 10;
-
-                g.insert("rect", "text")
-                    .attr("x", -(textWidth / 2) - boxPadding / 2)
-                    .attr("y", -15)
-                    .attr("width", textWidth + boxPadding)
-                    .attr("height", 30)
-                    .attr("fill", getNodeColor(d.data.type))
-                    .attr("stroke", "black")
-                    .attr("rx", 5)
-                    .attr("ry", 5);
-
-                g.append("text")
-                    .text(d.data.type || "Unknown")
-                    .attr("text-anchor", "middle")
-                    .attr("y", -5)
-                    .style("fill", "black")
-                    .style("font-size", "10px")
-                    .style("font-weight", "bold");
-
-                if (labelText.length > 25) {
-                    g.append("title").text(labelText);
-                }
-            });
+        });
+        return nodeMap;
     }
 
     /**
-     * Returns a color based on the type of the node.
-     * @param {string} type - The type of the node.
-     * @returns {string} The color for the node.
+     * Get node data for pipeline plan
      */
-    function getNodeColor(type) {
+    function getPipelineNodeData(pipelinePlan) {
+        const nodeMap = new Map();
+
+        // Add pipeline nodes
+        pipelinePlan.forEach(pipeline => {
+            nodeMap.set(String(pipeline.pipelineId), {
+                id: String(pipeline.pipelineId),
+                label: `Pipeline ${pipeline.pipelineId}`,
+                nodeType: "Pipeline",
+                isPipeline: true,
+                incomingTuples: pipeline.incomingTuples
+            });
+        });
+
+        // Add operator nodes
+        pipelinePlan.forEach(pipeline => {
+            pipeline.operators.forEach(operator => {
+                nodeMap.set(String(operator.id), {
+                    id: String(operator.id),
+                    label: operator.label,
+                    nodeType: "Operator",
+                    isPipeline: false,
+                    pipelineId: pipeline.pipelineId
+                });
+            });
+        });
+
+        return nodeMap;
+    }
+
+    /**
+     * Get node color based on type
+     */
+    function getNodeColor(nodeType) {
         const colors = {
             "Source": "#99ccff",
             "Sink": "#ff9999",
@@ -250,9 +207,268 @@
             "WindowedAggregation": "#ffa500",
             "EventTimeWatermarkAssigner": "#ba55d3",
             "Operator": "#d8bfd8",
+            "Pipeline": "#e6e6fa",
             "Unknown": "#cccccc"
         };
-        return colors[type] || "#cccccc";
+        return colors[nodeType] || "#cccccc";
+    }
+
+    /**
+     * Wrap text to fit within node bounds
+     */
+    function wrapText(text, width, lineHeight = 12) {
+        const words = text.split(/\s+/);
+        const lines = [];
+        let currentLine = "";
+
+        for (const word of words) {
+            const testLine = currentLine + (currentLine ? " " : "") + word;
+            // Rough estimate: 6 pixels per character
+            if (testLine.length * 6 > width && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+            } else {
+                currentLine = testLine;
+            }
+        }
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+
+        return lines.slice(0, 4); // Limit to 4 lines
+    }
+
+    /**
+     * Draw the graph visualization
+     */
+    function drawGraph(planType, planData) {
+        if (!Array.isArray(planData) || planData.length === 0) {
+            console.error(`No data found for ${planType}!`);
+            return;
+        }
+
+        let links;
+        let nodeMap;
+
+        if (planType === "logical") {
+            links = transformLogicalPlan(planData);
+            nodeMap = getLogicalNodeData(planData);
+        } else if (planType === "pipeline") {
+            links = transformPipelinePlan(planData);
+            nodeMap = getPipelineNodeData(planData);
+        }
+
+        if (links.length === 0) {
+            console.warn("No links generated for the graph");
+            return;
+        }
+
+        // Create d3-dag builder and graph
+        const builder = d3dag.graphConnect();
+        const graph = builder(links);
+
+        // Set up layout with much larger nodes
+        const nodeRadius = 80; // Increased from 25
+        const nodeSize = [nodeRadius * 2, nodeRadius * 2];
+        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeEllipse);
+        const line = d3.line().curve(d3.curveMonotoneY);
+
+        const layout = d3dag
+            .zherebko()
+            .nodeSize(nodeSize)
+            .gap([nodeRadius / 2, nodeRadius / 2])
+            .tweaks([shape]);
+
+        // Perform layout
+        const { width, height } = layout(graph);
+
+        // Color mapping
+        const steps = graph.nnodes() - 1;
+        const interp = d3.interpolateRainbow;
+        const colorMap = new Map(
+            [...graph.nodes()]
+                .sort((a, b) => a.y - b.y)
+                .map((node, i) => [node.data, interp(i / steps)])
+        );
+
+        // Set up SVG
+        const svg = d3.select("#svg")
+            .style("width", width + 4)
+            .style("height", height + 4);
+
+        // Clear previous content
+        svg.selectAll("g > *").remove();
+
+        const trans = svg.transition().duration(750);
+
+        // Add nodes
+        svg.select("#nodes")
+            .selectAll("g")
+            .data(graph.nodes())
+            .join((enter) =>
+                enter
+                    .append("g")
+                    .attr("class", "node")
+                    .attr("transform", ({ x, y }) => `translate(${x}, ${y})`)
+                    .attr("opacity", 0)
+                    .call((enter) => {
+                        enter.each(function(d) {
+                            const g = d3.select(this);
+                            const nodeData = nodeMap.get(d.data);
+
+                            if (nodeData && nodeData.isPipeline) {
+                                // Pipeline nodes as larger rectangles
+                                const rectWidth = nodeRadius * 2.5;
+                                const rectHeight = nodeRadius * 1.2;
+
+                                g.append("rect")
+                                    .attr("width", rectWidth)
+                                    .attr("height", rectHeight)
+                                    .attr("x", -rectWidth / 2)
+                                    .attr("y", -rectHeight / 2)
+                                    .attr("fill", getNodeColor(nodeData.nodeType))
+                                    .attr("class", "pipeline-node");
+
+                                // Pipeline label
+                                g.append("text")
+                                    .text(nodeData.label)
+                                    .attr("class", "node-label")
+                                    .attr("y", -5)
+                                    .attr("font-size", "14px")
+                                    .attr("fill", "black");
+
+                                // Pipeline tuples info
+                                if (nodeData.incomingTuples !== undefined) {
+                                    g.append("text")
+                                        .text(`Tuples: ${nodeData.incomingTuples.toLocaleString()}`)
+                                        .attr("class", "node-type")
+                                        .attr("y", 10)
+                                        .attr("font-size", "11px")
+                                        .attr("fill", "black");
+                                }
+
+                            } else {
+                                // Regular nodes as larger circles
+                                g.append("circle")
+                                    .attr("r", nodeRadius)
+                                    .attr("fill", (n) => colorMap.get(n.data));
+
+                                if (nodeData) {
+                                    // Node type at the top
+                                    g.append("text")
+                                        .text(nodeData.nodeType || "Unknown")
+                                        .attr("class", "node-type")
+                                        .attr("y", -nodeRadius * 0.5)
+                                        .attr("font-size", "12px")
+                                        .attr("font-weight", "bold");
+
+                                    // Node ID
+                                    g.append("text")
+                                        .text(`ID: ${nodeData.id}`)
+                                        .attr("class", "node-id")
+                                        .attr("y", -nodeRadius * 0.3)
+                                        .attr("font-size", "10px");
+
+                                    // Wrap and display the label
+                                    const labelLines = wrapText(nodeData.label, nodeRadius * 1.6);
+                                    labelLines.forEach((line, i) => {
+                                        g.append("text")
+                                            .text(line)
+                                            .attr("class", "node-label")
+                                            .attr("y", -10 + (i * 12))
+                                            .attr("font-size", "10px")
+                                            .attr("font-weight", "normal");
+                                    });
+                                } else {
+                                    g.append("text")
+                                        .text(d.data)
+                                        .attr("class", "node-label")
+                                        .attr("font-size", "12px");
+                                }
+                            }
+
+                            // Add tooltip with full information
+                            g.append("title").text(() => {
+                                if (nodeData) {
+                                    let tooltip = `ID: ${nodeData.id}\nType: ${nodeData.nodeType}\nLabel: ${nodeData.label}`;
+                                    if (nodeData.incomingTuples !== undefined) {
+                                        tooltip += `\nIncoming Tuples: ${nodeData.incomingTuples.toLocaleString()}`;
+                                    }
+                                    return tooltip;
+                                }
+                                return d.data;
+                            });
+                        });
+
+                        enter.transition(trans).attr("opacity", 1);
+                    })
+            );
+
+        // Add link gradients
+        svg.select("#defs")
+            .selectAll("linearGradient")
+            .data(graph.links())
+            .join((enter) =>
+                enter
+                    .append("linearGradient")
+                    .attr("id", ({ source, target }) =>
+                        encodeURIComponent(`${source.data}--${target.data}`)
+                    )
+                    .attr("gradientUnits", "userSpaceOnUse")
+                    .attr("x1", ({ points }) => points[0][0])
+                    .attr("x2", ({ points }) => points[points.length - 1][0])
+                    .attr("y1", ({ points }) => points[0][1])
+                    .attr("y2", ({ points }) => points[points.length - 1][1])
+                    .call((enter) => {
+                        enter
+                            .append("stop")
+                            .attr("class", "grad-start")
+                            .attr("offset", "0%")
+                            .attr("stop-color", ({ source }) => colorMap.get(source.data));
+                        enter
+                            .append("stop")
+                            .attr("class", "grad-stop")
+                            .attr("offset", "100%")
+                            .attr("stop-color", ({ target }) => colorMap.get(target.data));
+                    })
+            );
+
+        // Add link paths
+        svg.select("#links")
+            .selectAll("path")
+            .data(graph.links())
+            .join((enter) =>
+                enter
+                    .append("path")
+                    .attr("d", ({ points }) => line(points))
+                    .attr("fill", "none")
+                    .attr("stroke-width", 3)
+                    .attr("stroke", ({ source, target }) =>
+                        `url(#${encodeURIComponent(`${source.data}--${target.data}`)})`)
+                    .attr("opacity", 0)
+                    .call((enter) => enter.transition(trans).attr("opacity", 1))
+            );
+
+        // Add arrows
+        const arrowSize = 80;
+        const arrowLen = Math.sqrt((4 * arrowSize) / Math.sqrt(3));
+        const arrow = d3.symbol().type(d3.symbolTriangle).size(arrowSize);
+
+        svg.select("#arrows")
+            .selectAll("path")
+            .data(graph.links())
+            .join((enter) =>
+                enter
+                    .append("path")
+                    .attr("d", arrow)
+                    .attr("fill", ({ target }) => colorMap.get(target.data))
+                    .attr("transform", arrowTransform)
+                    .attr("opacity", 0)
+                    .attr("stroke", "white")
+                    .attr("stroke-width", 2)
+                    .attr("stroke-dasharray", `${arrowLen},${arrowLen}`)
+                    .call((enter) => enter.transition(trans).attr("opacity", 1))
+            );
     }
 
     // Initialize the visualization
@@ -260,7 +476,9 @@
         const selector = document.getElementById("plan-selector");
 
         // Load the default Logical Plan on startup
-        drawGraph("logical", logicalQueryPlan);
+        if (logicalQueryPlan && logicalQueryPlan.length > 0) {
+            drawGraph("logical", logicalQueryPlan);
+        }
 
         // Load the selected plan based on user input
         selector.addEventListener("change", (event) => {
