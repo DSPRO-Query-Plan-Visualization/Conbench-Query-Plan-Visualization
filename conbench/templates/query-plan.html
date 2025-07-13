@@ -97,7 +97,7 @@
 
     /**
      *  The authors of this code are grateful for the d3 and d3-dag library extension by Erik Brinkman.
-     *  For a better visual understanding of the underlying library including the sugiyama layout, please see https://codepen.io/brinkbot .
+     *  For a better visual understanding of the underlying library, including the sugiyama layout, please see https://codepen.io/brinkbot .
      *  The documentation can be found here: https://erikbrinkman.github.io/d3-dag/modules.html .
      */
 
@@ -594,7 +594,7 @@ function transformPipelinePlan(pipelinePlan) {
                 // Pipeline tuples info at the bottom
                 if (nodeData.incomingTuples !== undefined) {
                     g.append("text")
-                        .text(`Tuples: ${nodeData.incomingTuples.toLocaleString()}`)
+                        .text(`Incoming Tuples: ${nodeData.incomingTuples.toLocaleString()}`)
                         .attr("class", "node-type")
                         .attr("y", rectHeight / 2 - 5)
                         .attr("font-size", "9px")
