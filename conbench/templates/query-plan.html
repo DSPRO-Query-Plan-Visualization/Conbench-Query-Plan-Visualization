@@ -437,13 +437,13 @@ function transformPipelinePlan(pipelinePlan) {
         }
 
         // Set up layout
-        const nodeRadius = 85;
+        const nodeRadius = 110;
         const nodeSize = [nodeRadius * 2, nodeRadius * 2];
         const shape = d3dag.tweakShape(nodeSize, d3dag.shapeRect);
         const line = d3.line().curve(d3.curveMonotoneY);
 
         const layout = d3dag
-            .sugiyama()
+            .grid()
             .nodeSize(nodeSize)
             .gap([nodeRadius / 1.5, nodeRadius / 1.5])
             .tweaks([shape]);
