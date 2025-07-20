@@ -20,7 +20,7 @@
         padding: 10px;
         border-radius: 10px;
         background-color: #f0f0f0;
-        min-width: 200px;
+        min-width: 100px;
         max-width: 520px;
         word-wrap: break-word;
     }
@@ -56,6 +56,78 @@
         border-radius: 6px;
         font-size: 14px;
         border: 1px solid #888;
+    }
+
+    @media (max-width: 768px) {
+        .tree {
+            gap: 20px;
+            padding: 10px;
+        }
+
+        .tree-row {
+            gap: 20px;
+        }
+
+        .node-container {
+            padding: 6px;
+            min-width: 70px;
+            max-width: 320px;
+        }
+
+        .node-caption {
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+
+        .incoming-tuples {
+            font-size: 10px;
+        }
+
+        .operators {
+            gap: 5px;
+        }
+
+        .node-content {
+            font-size: 12px;
+            padding: 4px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .tree {
+            gap: 10px;
+            padding: 5px;
+        }
+
+        .tree-row {
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .node-container {
+            padding: 4px;
+            min-width: 50px;
+            max-width: 250px;
+        }
+
+        .node-caption {
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .incoming-tuples {
+            font-size: 9px;
+        }
+
+        .operators {
+            gap: 4px;
+        }
+
+        .node-content {
+            font-size: 10px;
+            padding: 3px;
+        }
     }
     </style>
 {% endblock %}
