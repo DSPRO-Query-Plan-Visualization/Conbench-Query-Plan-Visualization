@@ -274,15 +274,15 @@
     // creates and returns a line
     function drawLine(from, to){
         return new LeaderLine(from, to, {
-            color: '#999',
-            path: 'straight',
+            color: '#aaa', // border color
+            path: 'straight', // 'grid' is buggy
             startPlug: 'behind',
             endPlug: 'arrow3',
-            endPlugSize: 1.2,
-            size: 2,
+            endPlugSize: 2, // arrow head size
+            size: 1, // arrow size
             dropShadow: false,
             startSocket: 'bottom',
-            endSocket: 'auto'
+            endSocket: 'auto' // makes it so arrows can connect to the side instead of 'top' only, cleaner visuals
         });
     }
 
