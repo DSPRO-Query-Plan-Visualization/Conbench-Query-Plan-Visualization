@@ -1,746 +1,321 @@
 {% block head %}
-<style>
-    #control-panel {
-        margin-bottom: 20px;
+    <style>
+    .tree {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 30px;
+        padding: 20px;
     }
 
-    #svg-container {
-        width: 100%;
-        height: 900px;
-        border: 2px solid #202020;
-        overflow: hidden;
+    .tree-row {
+        display: flex;
+        gap: 40px;
+        justify-content: center;
     }
 
-    svg {
-        width: 100%;
-        height: 100%;
-        cursor: grab;
+    .pipeline, .logical-node {
+        border: 2px dashed #aaa;
+        padding: 10px;
+        border-radius: 10px;
+        background-color: #f0f0f0;
+        min-width: 200px;
+        max-width: 520px;
+        word-wrap: break-word;
     }
 
-    svg:active {
-        cursor: grabbing;
-    }
-
-    .node text {
-        font-family: sans-serif;
+    .pipeline-label, .logical-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         font-weight: bold;
-        fill: white;
-        text-anchor: middle;
-        alignment-baseline: middle;
+        margin-bottom: 10px;
+        font-size: 16px;
     }
 
-    .node circle {
-        stroke: white;
-        stroke-width: 2px;
+    .pipeline-tuples {
+        font-size: 12px;
+        color: #666;
+        font-weight: normal;
     }
 
-    .pipeline-node rect {
-        stroke: #333;
-        stroke-width: 2px;
-        rx: 8;
-        ry: 8;
+    .operators {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     }
 
-    .pipeline-node text {
-        fill: black;
+    .operator {
+        background-color: #d0e1f9;
+        padding: 5px;
+        border-radius: 6px;
+        font-size: 14px;
+        border: 1px solid #888;
     }
 
-    .operator-node circle {
-        stroke: #333;
-        stroke-width: 2px;
+    .logical-label, .logical-node-type {
+        background-color: #d0e1f9;
+        padding: 5px;
+        border-radius: 6px;
+        font-size: 12px;
+        border: 1px solid #888;
+        white-space: pre-wrap;
+        word-break: break-word;
+        width: 100%;
     }
 
-    .operator-node text {
-        fill: white;
+    .logical-label {
+        margin-top: 4px;
     }
-
-    #reset-view {
-        margin-left: 20px;
-        padding: 5px 10px;
-        background-color: #007acc;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-    #reset-view:hover {
-        background-color: #005a9e;
-    }
-</style>
-{% endblock %}
-
-{% block content %}
-<div id="control-panel">
-    <label for="plan-selector">Select Plan Type:</label>
-    <select id="plan-selector">
-        <option value="logical">Logical Plan</option>
-        <option value="pipeline">Pipeline Plan</option>
-    </select>
-    <button id="reset-view">Reset View</button>
-</div>
-
-<div id="svg-container">
-    <svg id="svg">
-        <defs id="defs"></defs>
-        <g id="main-group">
-            <g id="links"></g>
-            <g id="arrows"></g>
-            <g id="nodes"></g>
-        </g>
-    </svg>
-</div>
+    </style>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/leader-line@1.0.7/leader-line.min.js"></script>
 <script type="module">
+    const pipelinePlan  = {{ benchmark.pipeline_query_plan | default('[]') | tojson }};
+    const logicalPlan   = {{ benchmark.logical_query_plan  | default('[]') | tojson }};
 
-    /**
-     *  The authors of this code are grateful for the d3 and d3-dag library extension by Erik Brinkman.
-     *  For a better visual understanding of the underlying library, including the sugiyama layout, please see https://codepen.io/brinkbot .
-     *  The documentation can be found here: https://erikbrinkman.github.io/d3-dag/modules.html .
-     */
+    // tree origin, located in benchmark-result.html
+    const treeContainer = document.getElementById('tree-container');
 
-
-
-    import * as d3 from "https://cdn.skypack.dev/d3@7.8.4";
-    import * as d3dag from "https://cdn.skypack.dev/d3-dag@1.0.0-1";
-
-    const logicalQueryPlan = {{ benchmark.logical_query_plan | default('[]') | tojson }};
-    const pipelineQueryPlan = {{ benchmark.pipeline_query_plan | default('[]') | tojson }};
-
-    console.log("Logical Plan:", logicalQueryPlan);
-    console.log("Pipeline Plan:", pipelineQueryPlan);
-
-    // Global variables
-    let svg, mainGroup, zoomBehavior;
-    let isZoomInitialized = false;
-
-    /**
-     * get transform for arrow rendering
-     */
-    function arrowTransform({points}) {
-        const [[x1, y1], [x2, y2]] = points.slice(-2);
-        const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI + 90;
-        if (angle === 180) {
-            return `translate(${x2}, ${y2-10}) rotate(${angle})`;
-        }
-        return `translate(${x2}, ${y2}) rotate(${angle})`;
+    // lines list saves all currently drawn lines
+    // so we can delete them using the clearTree function
+    // also removes the displayed query plan
+    let lines = [];
+    function clearTree() {
+        treeContainer.innerHTML = '';
+        lines.forEach(l => l.remove());
+        lines = [];
     }
 
-    /**
-     * Transform logical plan data to d3-dag format
-     */
-    function transformLogicalPlan(logicalPlan) {
-        const links = [];
+    function renderPipelinePlan() {
+        clearTree();
+        if(!pipelinePlan || !pipelinePlan.length) return;
 
-        logicalPlan.forEach(node => {
-            if (node.outputs && node.outputs.length > 0) {
-                node.outputs.forEach(outputId => {
-                    links.push([String(node.id), String(outputId)]);
-                });
-            }
+        // creates the tree from bottom up
+        // assigns levels to each pipeline to form the tree
+        const sink = pipelinePlan.find(p => p.successors.length === 0);
+        const levelsMap = new Map();
+        const pipelineMap = new Map(pipelinePlan.map(p => [p.pipeline_id, p]));
+
+        // recursively creates the levelsMap which assigns each pipelineId to a level
+        function assignLevelsBottomUp(pid, level = 0) {
+            if (levelsMap.has(pid) && levelsMap.get(pid) <= level) return;
+            levelsMap.set(pid, level);
+            const pipeline = pipelineMap.get(pid);
+            pipeline.predecessors?.forEach(pred => assignLevelsBottomUp(pred, level + 1));
+        }
+
+        // start with the sink
+        assignLevelsBottomUp(sink.pipeline_id);
+
+        // creates 2D array: levels which contains all pipelines at the correct level
+        const maxLevel = Math.max(...levelsMap.values());
+        const levels = Array.from({ length: maxLevel + 1 }, () => []);
+        pipelinePlan.forEach(p => {
+            const level = levelsMap.get(p.pipeline_id);
+            if (level !== undefined) levels[level].push(p);
         });
 
-        return links;
-    }
+        // creates the html elements for each column and row in levels
+        // also sorts and adds the operators
+        // reversing puts the sources at the top and the sink to the bottom
+        levels.reverse().forEach(row => {
+            // create a row for each level
+            const rowDiv = document.createElement('div');
+            rowDiv.className = 'tree-row';
 
-    /**
-     * Transform pipeline plan data to d3-dag format
-     */
-function transformPipelinePlan(pipelinePlan) {
-    const links = [];
-    
-    // 1. Pipeline-to-pipeline connections
-    pipelinePlan.forEach(pipelineNode => {
-        if (pipelineNode.successors && pipelineNode.successors.length > 0) {
-            pipelineNode.successors.forEach(successorId => {
-                links.push([`pipeline_${pipelineNode.pipeline_id}`, `pipeline_${successorId}`]);
-            });
-        }
-    });
-    
-    // 2. Pipeline-to-operator connections (ONLY to the first operator)
-    pipelinePlan.forEach(pipelineNode => {
-        if (pipelineNode.operators && pipelineNode.operators.length > 0) {
-            // Find the first operator (one with no inputs from other operators in this pipeline)
-            const operatorIds = new Set(pipelineNode.operators.map(op => op.id));
-            const firstOperator = pipelineNode.operators.find(operator => {
-                // An operator is "first" if it has no inputs OR all its inputs are from outside this pipeline
-                return !operator.inputs || operator.inputs.length === 0 || 
-                       !operator.inputs.some(inputId => operatorIds.has(inputId));
-            });
-            
-            if (firstOperator) {
-                links.push([`pipeline_${pipelineNode.pipeline_id}`, `operator_${firstOperator.id}`]);
-            } else {
-                // Fallback: connect to the first operator in the array
-                links.push([`pipeline_${pipelineNode.pipeline_id}`, `operator_${pipelineNode.operators[0].id}`]);
-            }
-        }
-    });
-    
-    // 3. Operator-to-operator connections within pipelines
-    pipelinePlan.forEach(pipelineNode => {
-        if (pipelineNode.operators && pipelineNode.operators.length > 0) {
-            pipelineNode.operators.forEach(operator => {
-                if (operator.outputs && operator.outputs.length > 0) {
-                    operator.outputs.forEach(outputId => {
-                        links.push([`operator_${operator.id}`, `operator_${outputId}`]);
-                    });
-                }
-            });
-        }
-    });
-    
-    return links;
-}
+            // for each column in each row/ level create pipeline container
+            row.forEach(pipeline => {
+                // pipeline container
+                const pipelineDiv = document.createElement('div');
+                pipelineDiv.className = 'pipeline';
+                pipelineDiv.id = `pipeline-${pipeline.pipeline_id}`;
 
-    /**
-     * Get node data for the logical plan visualization
-     */
-    function getLogicalNodeData(logicalPlan) {
-        const nodeMap = new Map();
-        logicalPlan.forEach(node => {
-            nodeMap.set(String(node.id), {
-                id: String(node.id),
-                label: node.label,
-                nodeType: node.nodeType,
-                isPipeline: false,
-                isOperator: false
-            });
-        });
-        return nodeMap;
-    }
+                // TODO: same as in the logical plan, label should be renamed to avoid confusion
+                // pipeline label which contains the id and incoming tuples
+                // also put &nbsp between so they don't touch in case
+                // the pipeline is thin or the number is huge
+                const label = document.createElement('div');
+                label.className = 'pipeline-label';
+                label.innerHTML = `
+                    <span class="pipeline-id">Pipeline ${pipeline.pipeline_id}</span>
+                                        <span>&nbsp;&nbsp;&nbsp;</span>
+                    <span class="pipeline-tuples">${pipeline.incoming_tuples.toLocaleString()} tuples</span>
+                `;
+                pipelineDiv.appendChild(label);
 
-    /**
-     * Get node data for pipeline plan
-     */
-    function getPipelineNodeData(pipelinePlan) {
-        const nodeMap = new Map();
-
-        // Add pipeline nodes using pipeline_id
-        pipelinePlan.forEach(pipelineNode => {
-            nodeMap.set(`pipeline_${pipelineNode.pipeline_id}`, {
-                id: String(pipelineNode.pipeline_id),
-                label: `Pipeline ${pipelineNode.pipeline_id}`,
-                nodeType: "Pipeline",
-                isPipeline: true,
-                isOperator: false,
-                incomingTuples: pipelineNode.incoming_tuples
-            });
-        });
-
-        // Add operator nodes with operator_ prefix
-        pipelinePlan.forEach(pipelineNode => {
-            if (pipelineNode.operators && pipelineNode.operators.length > 0) {
-                pipelineNode.operators.forEach(operator => {
-                    nodeMap.set(`operator_${operator.id}`, {
-                        id: String(operator.id),
-                        label: operator.label,
-                        nodeType: "Operator",
-                        isPipeline: false,
-                        isOperator: true,
-                        pipelineId: pipelineNode.pipeline_id
-                    });
-                });
-            }
-        });
-
-        return nodeMap;
-    }
-    /**
-     * Wrap text to fit within node bounds
-     */
-    function wrapText(text, width) {
-        const words = text.split(/\s+/);
-        const lines = [];
-        let currentLine = "";
-
-        for (const word of words) {
-            const testLine = currentLine + (currentLine ? " " : "") + word;
-            // Rough estimate: 6 pixels per character
-            if (testLine.length * 3 > width && currentLine) {
-                lines.push(currentLine);
-                currentLine = word;
-            } else {
-                currentLine = testLine;
-            }
-        }
-        if (currentLine) {
-            lines.push(currentLine);
-        }
-
-        return lines.slice(0, 12); // Limit to 12 lines, or most likely Arguments
-    }
-
-    /**
-     * Special text wrapping for operator nodes with very long names
-     */
-    function wrapOperatorText(text, width) {
-        // First, try to extract the operator name from PhysicalOperator(NES::OperatorName)
-        const operatorMatch = text.match(/PhysicalOperator\(NES::(\w+)\)/);
-        if (operatorMatch) {
-            const operatorName = operatorMatch[1];
-            // Split camelCase names
-            const splitName = operatorName.replace(/([A-Z])/g, ' $1').trim();
-            return wrapText(splitName, width);
-        }
-
-        // For other long operator names, use more aggressive wrapping
-        const words = text.split(/[\s():]+/).filter(word => word.length > 0);
-        const lines = [];
-        let currentLine = "";
-
-        for (const word of words) {
-            const testLine = currentLine + (currentLine ? " " : "") + word;
-            // More aggressive wrapping for operators - 4 pixels per character
-            if (testLine.length * 4 > width && currentLine) {
-                lines.push(currentLine);
-                currentLine = word;
-            } else {
-                currentLine = testLine;
-            }
-        }
-        if (currentLine) {
-            lines.push(currentLine);
-        }
-
-        return lines.slice(0, 4); // Limit to 4 lines for better spacing
-    }
-
-    /**
-     * Initialize zoom behavior - only call this after content is rendered
-     */
-    function initializeZoom() {
-        if (isZoomInitialized) return;
-
-        zoomBehavior = d3.zoom()
-            .scaleExtent([0.1, 10])
-            .on("zoom", (event) => {
-                mainGroup.attr("transform", event.transform);
-            });
-
-        svg.call(zoomBehavior);
-        isZoomInitialized = true;
-        console.log("Zoom initialized");
-    }
-
-    /**
-     * Reset view to fit content
-     */
-    function resetView() {
-        if (!svg || !mainGroup || !zoomBehavior) {
-            console.log("Cannot reset view - missing elements");
-            return;
-        }
-
-        // Wait for elements to be rendered and measurable
-        setTimeout(() => {
-            try {
-                const bounds = mainGroup.node().getBBox();
-                console.log("Bounds:", bounds);
-
-                const parent = svg.node().parentNode;
-                const fullWidth = parent.clientWidth;
-                const fullHeight = parent.clientHeight;
-
-                const width = bounds.width;
-                const height = bounds.height;
-                const midX = bounds.x + width / 2;
-                const midY = bounds.y + height / 2;
-
-                if (width === 0 || height === 0) {
-                    console.log("Cannot reset view - bounds are zero, trying alternative method");
-
-                    // Alternative: use the layout dimensions we know
-                    const layoutWidth = window.currentLayoutWidth || 400;
-                    const layoutHeight = window.currentLayoutHeight || 800;
-
-                    const scale = Math.min(fullWidth / layoutWidth, fullHeight / layoutHeight) * 0.8;
-                    const translate = [
-                        (fullWidth - layoutWidth * scale) / 2,
-                        (fullHeight - layoutHeight * scale) / 2
-                    ];
-
-                    svg.transition()
-                        .duration(750)
-                        .call(zoomBehavior.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
-                    return;
+                // since the operators in the pipeline plan are not ordered,
+                // they need to be sorted first
+                // operator nodes can have at max one parent and child
+                function sortOperators(operators){
+                    const result = [];
+                    if(operators.length === 0) return result;
+                    // add start node
+                    let node = operators.find(o => o.inputs.length === 0);
+                    result.push(node);
+                    // add all other nodes
+                    while(node.outputs.length > 0){
+                        if(node.inputs.length > 1 || node.outputs.length > 1) console.warn("WARNING MORE THAN 1 PARENT OR CHILD IN OPERATOR.");
+                        node = operators.find(o => o.id === node.outputs[0]);
+                        result.push(node);
+                    }
+                    return result;
                 }
 
-                const scale = Math.min(fullWidth / width, fullHeight / height) * 0.9;
-                const translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
-
-                svg.transition()
-                    .duration(750)
-                    .call(zoomBehavior.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
-            } catch (error) {
-                console.error("Error in resetView:", error);
-            }
-        }, 50);
-    }
-
-    /**
-     * Draw the graph visualization
-     */
-    function drawGraph(planType, planData) {
-        if (!Array.isArray(planData) || planData.length === 0) {
-            console.error(`No data found for ${planType}!`);
-            return;
-        }
-
-        console.log(`Drawing ${planType} plan...`);
-
-        let links;
-        let nodeMap;
-
-        if (planType === "logical") {
-            links = transformLogicalPlan(planData);
-            nodeMap = getLogicalNodeData(planData);
-        } else if (planType === "pipeline") {
-            links = transformPipelinePlan(planData);
-            nodeMap = getPipelineNodeData(planData);
-        }
-
-        console.log("Links:", links);
-        console.log("NodeMap:", nodeMap);
-
-        if (links.length === 0) {
-            console.warn("No links generated for the graph");
-            return;
-        }
-
-        // Initialize SVG elements
-        svg = d3.select("#svg");
-        mainGroup = svg.select("#main-group");
-
-        // Clear previous content
-        mainGroup.selectAll("*").remove();
-        svg.select("#defs").selectAll("*").remove();
-
-        // Re-create the groups
-        const linksGroup = mainGroup.append("g").attr("id", "links");
-        const arrowsGroup = mainGroup.append("g").attr("id", "arrows");
-        const nodesGroup = mainGroup.append("g").attr("id", "nodes");
-
-        // Create d3-dag builder and graph
-        const builder = d3dag.graphConnect();
-        let graph;
-
-        try {
-            graph = builder(links);
-            console.log("Graph created successfully. Nodes:", graph.nnodes(), "Links:", graph.nlinks());
-        } catch (error) {
-            console.error("Error creating graph:", error);
-            return;
-        }
-
-        // Set up layout
-        const nodeRadius = 110;
-        const nodeSize = [nodeRadius * 2, nodeRadius * 2];
-        const shape = d3dag.tweakShape(nodeSize, d3dag.shapeRect);
-        const line = d3.line().curve(d3.curveMonotoneY);
-
-        const layout = d3dag
-            .grid()
-            .nodeSize(nodeSize)
-            .gap([nodeRadius / 1.5, nodeRadius / 1.5])
-            .tweaks([shape]);
-
-        // Perform layout
-        let layoutResult;
-        try {
-            layoutResult = layout(graph);
-            console.log("Layout applied successfully:", layoutResult);
-        } catch (error) {
-            console.error("Error applying layout:", error);
-            return;
-        }
-
-        const { width, height } = layoutResult;
-        console.log("Layout dimensions:", width, height);
-
-        // Store layout dimensions globally for fallback
-        window.currentLayoutWidth = width;
-        window.currentLayoutHeight = height;
-
-        // Color mapping
-        const steps = graph.nnodes() - 1;
-        const interp = d3.interpolateRainbow;
-        const colorMap = new Map(
-            [...graph.nodes()]
-                .sort((a, b) => a.y - b.y)
-                .map((node, i) => [node.data, interp(steps > 0 ? i / steps : 0)])
-        );
-
-        console.log("Starting to render elements...");
-
-        // Get graph links and nodes arrays
-        const graphLinks = [...graph.links()];
-        const graphNodes = [...graph.nodes()];
-
-        console.log("Graph links count:", graphLinks.length);
-        console.log("Graph nodes count:", graphNodes.length);
-
-        // Add link gradients
-        const defsSelection = svg.select("#defs");
-        const gradients = defsSelection
-            .selectAll("linearGradient")
-            .data(graphLinks)
-            .enter()
-            .append("linearGradient")
-            .attr("id", ({ source, target }) =>
-                encodeURIComponent(`${source.data}--${target.data}`)
-            )
-            .attr("gradientUnits", "userSpaceOnUse")
-            .attr("x1", ({ points }) => points[0][0])
-            .attr("x2", ({ points }) => points[points.length - 1][0])
-            .attr("y1", ({ points }) => points[0][1])
-            .attr("y2", ({ points }) => points[points.length - 1][1]);
-
-        gradients.append("stop")
-            .attr("offset", "0%")
-            .attr("stop-color", d => colorMap.get(d.source.data));
-
-        gradients.append("stop")
-            .attr("offset", "100%")
-            .attr("stop-color", d => colorMap.get(d.target.data));
-
-        console.log("Gradients created:", gradients.size());
-
-        // Add link paths
-        const linkPaths = linksGroup
-            .selectAll("path")
-            .data(graphLinks)
-            .enter()
-            .append("path")
-            .attr("d", ({ points }) => line(points))
-            .attr("fill", "none")
-            .attr("stroke-width", 3)
-            .attr("stroke", ({ source, target }) =>
-                `url(#${encodeURIComponent(`${source.data}--${target.data}`)})`)
-            .attr("opacity", 1);
-
-        console.log("Links rendered:", linkPaths.size());
-
-        // Add arrows
-        const arrowSize = 120;
-        const arrowLen = Math.sqrt((4 * arrowSize) / Math.sqrt(3));
-        const arrow = d3.symbol().type(d3.symbolTriangle).size(arrowSize);
-
-        const arrowPaths = arrowsGroup
-            .selectAll("path")
-            .data(graphLinks)
-            .enter()
-            .append("path")
-            .attr("d", arrow)
-            .attr("fill", ({ target }) => colorMap.get(target.data))
-            .attr("transform", arrowTransform)
-            .attr("opacity", 1)
-            .attr("stroke", "white")
-            .attr("stroke-width", 2)
-            .attr("stroke-dasharray", `${arrowLen},${arrowLen}`);
-
-        console.log("Arrows rendered:", arrowPaths.size());
-
-        // Add nodes
-        const nodeGroups = nodesGroup
-            .selectAll("g.node")
-            .data(graphNodes)
-            .enter()
-            .append("g")
-            .attr("class", "node")
-            .attr("transform", ({ x, y }) => `translate(${x}, ${y})`);
-
-        nodeGroups.each(function(d) {
-            const g = d3.select(this);
-            const nodeData = nodeMap.get(d.data);
-
-            if (nodeData && nodeData.isPipeline) {
-                // Pipeline nodes as larger rectangles
-                const rectWidth = nodeRadius * 2.5;
-                const rectHeight = nodeRadius * 1.5;
-
-                g.append("rect")
-                    .attr("width", rectWidth)
-                    .attr("height", rectHeight)
-                    .attr("x", -rectWidth / 2)
-                    .attr("y", -rectHeight / 2)
-                    .attr("fill", colorMap.get(d.data))
-                    .attr("class", "pipeline-node");
-
-                // Pipeline ID at the top
-                g.append("text")
-                    .text(`Pipeline ID: ${nodeData.id}`)
-                    .attr("class", "node-id")
-                    .attr("y", -rectHeight / 2 + 15)
-                    .attr("font-size", "11px")
-                    .attr("font-weight", "bold")
-                    .attr("fill", "black");
-
-                // Pipeline label - wrapped text
-                const labelLines = wrapText(nodeData.label, rectWidth * 0.9);
-                labelLines.forEach((line, i) => {
-                    g.append("text")
-                        .text(line)
-                        .attr("class", "node-label")
-                        .attr("y", -rectHeight / 2 + 35 + (i * 12))
-                        .attr("font-size", "10px")
-                        .attr("font-weight", "normal")
-                        .attr("fill", "black");
+                // operator container
+                const opsContainer = document.createElement('div');
+                opsContainer.className = 'operators';
+                const sortedOperators = sortOperators(pipeline.operators);
+                sortedOperators.forEach(op => {
+                    const opDiv = document.createElement('div');
+                    opDiv.className = 'operator';
+                    opDiv.textContent = `#${op.id}: ${op.label}`;
+                    opsContainer.appendChild(opDiv);
                 });
 
-                // Pipeline tuples info at the bottom
-                if (nodeData.incomingTuples !== undefined) {
-                    g.append("text")
-                        .text(`Incoming Tuples: ${nodeData.incomingTuples.toLocaleString()}`)
-                        .attr("class", "node-type")
-                        .attr("y", rectHeight / 2 - 5)
-                        .attr("font-size", "9px")
-                        .attr("font-weight", "bold")
-                        .attr("fill", "black");
-                }
-
-            } else {
-                // Regular nodes (both logical and operator nodes) as circles
-                g.append("circle")
-                    .attr("r", nodeRadius)
-                    .attr("fill", colorMap.get(d.data))
-                    .attr("class", nodeData && nodeData.isOperator ? "operator-node" : "");
-
-                if (nodeData) {
-                    // For operator nodes, use different layout
-                    if (nodeData.isOperator) {
-                        // Operator node - calculate total height and center it
-                        const labelLines = wrapOperatorText(nodeData.label, nodeRadius * 0.9);
-
-                        // Calculate the total height of all text elements
-                        const idHeight = 10; // font-size
-                        const labelHeight = labelLines.length * 10; // 10px per line
-                        const pipelineHeight = 10; // font-size
-                        const totalHeight = idHeight + labelHeight + pipelineHeight + 12; // 12px for spacing
-
-                        // Start from a center and work up/down
-                        const startY = -totalHeight / 2 + idHeight / 2;
-
-                        g.append("text")
-                            .text(`ID: ${nodeData.id}`)
-                            .attr("class", "node-id")
-                            .attr("y", startY)
-                            .attr("font-size", "10px")
-                            .attr("font-weight", "bold");
-
-                        // Label lines
-                        labelLines.forEach((line, i) => {
-                            g.append("text")
-                                .text(line)
-                                .attr("class", "node-label")
-                                .attr("y", startY + idHeight + 5 + (i * 10))
-                                .attr("font-size", "10px")
-                                .attr("font-weight", "normal");
-                        });
-
-                        // Pipeline ID
-                        g.append("text")
-                            .text(`Pipeline: ${nodeData.pipelineId}`)
-                            .attr("class", "node-type")
-                            .attr("y", startY + idHeight + 5 + labelHeight + 5)
-                            .attr("font-size", "10px")
-                            .attr("font-weight", "bold");
-                    } else {
-                        // Regular logical node - calculate total height and center it
-                        const labelLines = wrapText(nodeData.label, nodeRadius * 0.8);
-
-                        // Calculate total height
-                        const typeHeight = 12; // font-size
-                        const idHeight = 10; // font-size
-                        const labelHeight = labelLines.length * 12; // 12px per line
-                        const totalHeight = typeHeight + idHeight + labelHeight + 10; // 10px for spacing
-
-                        // Start from a center and work up/down
-                        const startY = -totalHeight / 2 + typeHeight / 2;
-
-                        g.append("text")
-                            .text(`ID: ${nodeData.id}`)
-                            .attr("class", "node-id")
-                            .attr("y", startY + typeHeight + 5)
-                            .attr("font-size", "10px");
-
-                        labelLines.forEach((line, i) => {
-                            g.append("text")
-                                .text(line)
-                                .attr("class", "node-label")
-                                .attr("y", startY + typeHeight + idHeight + 10 + (i * 12))
-                                .attr("font-size", "10px")
-                                .attr("font-weight", "normal");
-                        });
-                    }
-                } else {
-                    g.append("text")
-                        .text(d.data)
-                        .attr("class", "node-label")
-                        .attr("font-size", "12px");
-                }
-            }
-
-            // Add tooltip
-            g.append("title").text(() => {
-                if (nodeData) {
-                    let tooltip = `ID: ${nodeData.id}\nType: ${nodeData.nodeType}\nLabel: ${nodeData.label}`;
-                    if (nodeData.incomingTuples !== undefined) {
-                        tooltip += `\nIncoming Tuples: ${nodeData.incomingTuples.toLocaleString()}`;
-                    }
-                    if (nodeData.pipelineId) {
-                        tooltip += `\nPipeline: ${nodeData.pipelineId}`;
-                    }
-                    return tooltip;
-                }
-                return d.data;
+                // add divs to row
+                pipelineDiv.appendChild(opsContainer);
+                rowDiv.appendChild(pipelineDiv);
             });
+
+            // add row to tree
+            treeContainer.appendChild(rowDiv);
         });
 
-        console.log("Nodes rendered:", nodeGroups.size());
-        console.log("Graph rendered successfully");
+        // draws arrows between pipelines and adds them to lines list for easy removal
+        window.requestAnimationFrame(() => {
+            pipelinePlan.forEach(p => {
+                const from = document.getElementById(`pipeline-${p.pipeline_id}`);
+                if (!from || !p.successors) return;
 
-        // Initialize zoom AFTER rendering is complete
-        setTimeout(() => {
-            initializeZoom();
-            // Auto-fit the view after Zoom is initialized
-            resetView();
-        }, 250);
+                // line for each successor
+                p.successors.forEach(succId => {
+                    const to = document.getElementById(`pipeline-${succId}`);
+                    if (to) {
+                        const line = drawLine(from, to);
+                        lines.push(line);
+                    }
+                });
+            });
+        });
     }
 
-    // Initialize the visualization
-    document.addEventListener("DOMContentLoaded", () => {
-        const selector = document.getElementById("plan-selector");
-        const resetButton = document.getElementById("reset-view");
-        selector.value = "logical";
+    function renderLogicalPlan() {
+        clearTree();
+        if(!logicalPlan || !logicalPlan.length) return;
 
-        console.log("DOM loaded, starting visualization...");
+        // creates the tree from bottom up
+        // assigns levels to each logical node to form the tree
+        const sink = logicalPlan.find(node => node.outputs.length === 0);
+        const nodeMap = new Map(logicalPlan.map(n => [n.id, n]));
+        const levelsMap = new Map();
 
-        // Load the default Logical Plan on startup
-        if (logicalQueryPlan && logicalQueryPlan.length > 0) {
-            drawGraph("logical", logicalQueryPlan);
+        // recursively creates the levelsMap which assigns each logical node id to a level
+        function assignLevelBottomUp(id, level = 0) {
+            if (levelsMap.has(id) && levelsMap.get(id) <= level) return;
+            levelsMap.set(id, level);
+            const node = nodeMap.get(id);
+            node.inputs?.forEach(inputId => assignLevelBottomUp(inputId, level + 1));
+        }
+
+        // start with sink
+        assignLevelBottomUp(sink.id)
+
+        // creates 2D array: levels which contains all logical nodes at the correct level
+        const max = Math.max(...levelsMap.values());
+        const levels = Array.from({ length: max + 1 }, () => []);
+        logicalPlan.forEach(n => {
+            const level = levelsMap.get(n.id);
+            if (level !== undefined) levels[level].push(n);
+        });
+
+        // creates the html elements for each column and row in levels
+        // reversing puts the sources at the top and the sink to the bottom
+        levels.reverse().forEach(row => {
+            // create a row for each level
+            const rowDiv = document.createElement('div');
+            rowDiv.className = 'tree-row';
+
+            // for each column in each row/ level create a node container
+            row.forEach(node => {
+                const div = document.createElement('div');
+                div.className = 'logical-node';
+                div.id = `logical-${node.id}`;
+
+                // label/ headline of node consisting of node type and id
+                // TODO: should be renamed, as label is an actual attribute of the node which is misleading
+                const label = document.createElement('div');
+                label.className = 'pipeline-label';
+                label.innerHTML = `
+                    <span class="pipeline-id">${node.node_type} ${node.id}</span>
+                `;
+
+                // add headline to container
+                div.appendChild(label);
+
+                // actual node label
+                const lab = document.createElement('div');
+                lab.className = 'operator';
+                lab.textContent = node.label;
+
+                // add node label to container
+                div.appendChild(lab);
+                // add container to row
+                rowDiv.appendChild(div);
+            });
+            // add row to tree
+            treeContainer.appendChild(rowDiv);
+        });
+
+        // draws arrows between logical nodes and adds them to lines list for easy removal
+        window.requestAnimationFrame(() => {
+            logicalPlan.forEach(n => {
+                const from = document.getElementById(`logical-${n.id}`);
+                n.outputs?.forEach(outId => {
+                    const to = document.getElementById(`logical-${outId}`);
+                    if (from && to) {
+                        const line = drawLine(from, to);
+                        lines.push(line);
+                    }
+                });
+            });
+        });
+    }
+
+    // creates and returns a line
+    function drawLine(from, to){
+        return new LeaderLine(from, to, {
+            color: '#999',
+            path: 'straight',
+            startPlug: 'behind',
+            endPlug: 'arrow3',
+            endPlugSize: 1.2,
+            size: 2,
+            dropShadow: false,
+            startSocket: 'bottom',
+            endSocket: 'auto'
+        });
+    }
+
+    // button logic for switching between pipeline and logical plan view
+    // 'toggle-view' element is in benchmark-result.html
+    const toggleButton = document.getElementById('toggle-view');
+    let currentView = 'pipeline';
+    toggleButton.addEventListener('click', () => {
+        if (currentView === 'pipeline') {
+            currentView = 'logical';
+            toggleButton.textContent = 'Switch to Pipeline Plan';
+            renderLogicalPlan();
         } else {
-            console.warn("No logical query plan data available");
+            currentView = 'pipeline';
+            toggleButton.textContent = 'Switch to Logical Plan';
+            renderPipelinePlan();
         }
-
-        // Load the selected plan based on user input
-        selector.addEventListener("change", (event) => {
-            const selectedPlan = event.target.value;
-            console.log(`Plan selector changed to: ${selectedPlan}`);
-            // Reset zoom state when changing plans
-            isZoomInitialized = false;
-            if (selectedPlan === "logical") {
-                drawGraph("logical", logicalQueryPlan);
-            } else if (selectedPlan === "pipeline") {
-                drawGraph("pipeline", pipelineQueryPlan);
-            }
-        });
-
-        // Reset view button
-        resetButton.addEventListener("click", resetView);
     });
+
+    // start with pipeline plan
+    renderPipelinePlan();
 </script>
 {% endblock %}
