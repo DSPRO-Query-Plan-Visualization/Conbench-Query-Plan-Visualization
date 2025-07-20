@@ -25,7 +25,7 @@
         word-wrap: break-word;
     }
 
-    /* pipeline and logical node labels/ headlines */
+    /* pipeline and logical node caption */
     .node-caption {
         display: flex;
         justify-content: space-between;
@@ -123,18 +123,16 @@
                 pipelineDiv.className = 'node-container';
                 pipelineDiv.id = `pipeline-${pipeline.pipeline_id}`;
 
-                // TODO: same as in the logical plan, label should be renamed to avoid confusion
-                // pipeline label which contains the id and incoming tuples
-                // also put &nbsp between so they don't touch in case
-                // the pipeline is thin or the number is huge
-                const label = document.createElement('div');
-                label.className = 'node-caption';
-                label.innerHTML = `
+                // pipeline caption which contains the id and incoming tuples, also put &nbsp (space) between
+                // so they don't touch in case the pipeline is too thin or the number is too huge
+                const caption = document.createElement('div');
+                caption.className = 'node-caption';
+                caption.innerHTML = `
                     <span class="pipeline-id">Pipeline ${pipeline.pipeline_id}</span>
-                                        <span>&nbsp;&nbsp;&nbsp;</span>
+                    <span>&nbsp;&nbsp;&nbsp;</span>
                     <span class="incoming-tuples">${pipeline.incoming_tuples.toLocaleString()} tuples</span>
                 `;
-                pipelineDiv.appendChild(label);
+                pipelineDiv.appendChild(caption);
 
                 // since the operators in the pipeline plan are not ordered,
                 // they need to be sorted first
@@ -234,24 +232,23 @@
                 div.className = 'node-container';
                 div.id = `logical-${node.id}`;
 
-                // label/ headline of node consisting of node type and id
-                // TODO: should be renamed, as label is an actual attribute of the node which is misleading
-                const label = document.createElement('div');
-                label.className = 'node-caption';
-                label.innerHTML = `
+                // caption of node consisting of node type and id
+                const caption = document.createElement('div');
+                caption.className = 'node-caption';
+                caption.innerHTML = `
                     <span class="pipeline-id">${node.node_type} ${node.id}</span>
                 `;
 
-                // add headline to container
-                div.appendChild(label);
+                // add caption to container
+                div.appendChild(caption);
 
                 // actual node label
-                const lab = document.createElement('div');
-                lab.className = 'node-content';
-                lab.textContent = node.label;
+                const label = document.createElement('div');
+                label.className = 'node-content';
+                label.textContent = node.label;
 
                 // add node label to container
-                div.appendChild(lab);
+                div.appendChild(label);
                 // add container to row
                 rowDiv.appendChild(div);
             });
