@@ -101,8 +101,8 @@ class BenchmarkResult(Base, EntityMixin):
 
     # TODO: re-check if selectin is the better choice compared to joined
     # TODO: cascading for easier delete ?
-    logical_query_plan: Mapped[Optional[LogicalQueryPlan]] = relationship("LogicalQueryPlan", lazy="joined")
-    pipeline_query_plan: Mapped[Optional[PipelinePlan]] = relationship("PipelinePlan", lazy="joined")
+    logical_query_plan: Mapped[Optional[LogicalQueryPlan]] = relationship("LogicalQueryPlan", lazy="joined", cascade="all, delete-orphan")
+    pipeline_query_plan: Mapped[Optional[PipelinePlan]] = relationship("PipelinePlan", lazy="joined", cascade="all, delete-orphan")
 
     # The "fingerprint" (identifier) of this result's "history" (timeseries group). Two
     # results with the same history_fingerprint should be directly comparable, because

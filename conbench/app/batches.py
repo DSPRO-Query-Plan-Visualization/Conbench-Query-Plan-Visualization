@@ -4,6 +4,7 @@ import json
 import bokeh
 import flask as f
 
+from .. import log
 from ..app import rule
 from ..app._endpoint import AppEndpoint, authorize_or_terminate
 from ..app._plots import simple_bar_plot
@@ -40,6 +41,7 @@ class BatchPlot(AppEndpoint, ContextMixin):
     def get(self, batch_id):
         # This will only return 1000 results. This page isn't linked from anywhere.
         # How useful is this page?
+        log.info("BATCHES\n\n\n")
         benchmarks, response = self._get_benchmarks(batch_id)
         if response.status_code != 200:
             self.flash("Error getting benchmarks.")

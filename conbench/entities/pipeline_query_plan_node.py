@@ -28,7 +28,7 @@ class PipelineNode(Base, EntityMixin["PipelineNode"]):
         postgresql.ARRAY(s.Numeric), default=[]
     )
     # TODO: relationship, default [] ? optional ?
-    operators: Mapped[OperatorPlan] = relationship("OperatorPlan", lazy="joined") # TODO: cascading needed on delete ?
+    operators: Mapped[OperatorPlan] = relationship("OperatorPlan", lazy="joined", cascade="all, delete-orphan") # TODO: cascading needed on delete ?
 
 class _PipelineNodeSerializer(EntitySerializer):
     def _dump(self, pipeline_node):
