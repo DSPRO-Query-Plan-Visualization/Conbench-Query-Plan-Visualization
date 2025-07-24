@@ -418,8 +418,8 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
 
-            # if benchmark_result.logical_query_plan:
-            #     out_dict["logical_query_plan"] = str(LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan))
+            if benchmark_result.logical_query_plan:
+                out_dict["logical_query_plan"] = LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan)
             #     log.info("\nlogical_query_plan:\n" + str(out_dict["logical_query_plan"]))
             # else:
             #     out_dict["logical_query_plan"] = None
