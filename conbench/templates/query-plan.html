@@ -154,6 +154,8 @@
     const pipelinePlan = {{ benchmark.pipeline_query_plan | default('[]') | tojson }};
     const logicalPlan = {{ benchmark.logical_query_plan | default('[]') | tojson }};
 
+    console.log(pipelinePlan[0])
+
     const treeContainer = document.getElementById('tree-container');
     let lines = [];
 

@@ -51,8 +51,8 @@ class SystestAdapter(BenchmarkAdapter):
                 context={"benchmark_language": "systest"},
                 tags={"name": result["query name"]},
                 github={"repository": "https://github.com/fake/fake"},
-                # serializedLogicalPlan=result["serializedLogicalPlan"],
-                # serializedPipelinePlan=result["serializedPipelinePlan"],
+                serializedLogicalPlan=result["serializedLogicalPlan"],
+                serializedPipelinePlan=result["serializedPipelinePlan"],
             ))
 
         return benchmarkResults
