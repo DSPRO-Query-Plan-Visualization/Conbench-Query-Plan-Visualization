@@ -417,8 +417,9 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
 
-            if benchmark_result.logical_query_plan:
-                out_dict["logical_query_plan"] = LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan)
+            # if benchmark_result.logical_query_plan:
+            #     out_dict["logical_query_plan"] = str(LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan))
+            #     log.info("\nlogical_query_plan:\n" + str(out_dict["logical_query_plan"]))
             # else:
             #     out_dict["logical_query_plan"] = None
             #
@@ -427,8 +428,13 @@ class BenchmarkResult(Base, EntityMixin):
             # like:
             #      const logical = {{ benchmark.logical_query_plan | default('{}') | tojson }};
 
-            if benchmark_result.pipeline_query_plan:
-                out_dict["pipeline_query_plan"] = PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan)
+            # if benchmark_result.pipeline_query_plan:
+            #     out_dict["pipeline_query_plan"] = str(PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan))
+            #     #log.info("\npipeline_query_plan:\n" + str(out_dict["pipeline_query_plan"]))
+            # else:
+            #     out_dict["pipeline_query_plan"] = None
+
+            #out_dict["blabla"] = "test"
 
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict
