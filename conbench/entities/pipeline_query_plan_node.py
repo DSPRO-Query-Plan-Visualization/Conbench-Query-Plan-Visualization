@@ -40,8 +40,6 @@ class _PipelineNodeSerializer(EntitySerializer):
                 "incoming_tuples": int(pipeline_node.incoming_tuples),
                 "operators": OperatorPlanSerializer().many._dump(pipeline_node.operators),
             }
-        log.info("\n\nresult:")
-        log.info(result)
         return result
 
 class PipelineNodeSerializer:

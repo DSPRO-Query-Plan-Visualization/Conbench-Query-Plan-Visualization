@@ -368,10 +368,8 @@ class BenchmarkResultList(AppEndpoint, ContextMixin):
     def get(self):
         # This will only return 1000 results. This page isn't linked from anywhere.
         # How useful is this page?
-        log.info("app/results 371\n\n\n")
         benchmarks, response = self._get_benchmarks()
         if response.status_code != 200:
-            log.info("error getting benchmarks\n\n\n")
             self.flash("Error getting benchmarks.")
             return self.redirect("app.index")
 

@@ -111,9 +111,6 @@ def sorted_data(benchmarks):
         case.append(benchmark["stats"]["mean"])
         data.append(case)
 
-    log.info("\n\nsorted data:")
-    log.info(data)
-
     # Try to sort the cases better
     # unsorted: ['262144/0', '262144/1', '262144/10', '262144/2']
     # sorted: [[262144, 0], [262144, 1], [262144, 2], [262144, 10]]

@@ -4,7 +4,6 @@ import logging
 import math
 import statistics
 import time
-import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
@@ -420,7 +419,6 @@ class BenchmarkResult(Base, EntityMixin):
 
             if benchmark_result.logical_query_plan:
                 out_dict["logical_query_plan"] = LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan)
-            #     log.info("\nlogical_query_plan:\n" + str(out_dict["logical_query_plan"]))
             # else:
             #     out_dict["logical_query_plan"] = None
             #
@@ -428,24 +426,11 @@ class BenchmarkResult(Base, EntityMixin):
             # currently used alternative: make sure that we set default values in the html using jinja
             # like:
             #      const logical = {{ benchmark.logical_query_plan | default('{}') | tojson }};
-
-
-
-            def decimal_converter(o):
-                if isinstance(o, Decimal):
-                    return float(o)
-                raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
-
-            # in your serializer:
+            #
             if benchmark_result.pipeline_query_plan:
-                out_dict["pipeline_query_plan"] =PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan)
-                #out_dict["pipeline_query_plan"] = [{'incoming_tuples': '0', 'operators': [{'id': '10', 'inputs': [], 'label': 'PhysicalOperator(NES::SourcePhysicalOperator)', 'outputs': []}], 'pipeline_id': '1', 'predecessors': [], 'successors': ['2']}, {'incoming_tuples': '1810637', 'operators': [{'id': '11', 'inputs': [], 'label': 'PhysicalOperator(NES::ScanPhysicalOperator)', 'outputs': ['9']}, {'id': '9', 'inputs': ['11'], 'label': 'PhysicalOperator(NES::EventTimeWatermarkAssignerPhysicalOperator)', 'outputs': ['4']}, {'id': '4', 'inputs': ['9'], 'label': 'PhysicalOperator(NES::NLJBuildPhysicalOperator)', 'outputs': []}], 'pipeline_id': '2', 'predecessors': ['1'], 'successors': ['3']}, {'incoming_tuples': '19917031', 'operators': [{'id': '6', 'inputs': [], 'label': 'PhysicalOperator(NES::NLJProbePhysicalOperator)', 'outputs': ['12']}, {'id': '12', 'inputs': ['6'], 'label': 'PhysicalOperator(NES::EmitPhysicalOperator)', 'outputs': []}], 'pipeline_id': '3', 'predecessors': ['2', '7'], 'successors': ['4']}, {'incoming_tuples': '9149189', 'operators': [{'id': '2', 'inputs': [], 'label': 'PhysicalOperator(NES::ScanPhysicalOperator)', 'outputs': ['3']}, {'id': '3', 'inputs': ['2'], 'label': 'PhysicalOperator(NES::EmitPhysicalOperator)', 'outputs': []}], 'pipeline_id': '4', 'predecessors': ['3'], 'successors': ['5']}, {'incoming_tuples': '9149189', 'operators': [{'id': '1', 'inputs': [], 'label': 'PhysicalOperator(NES::SinkPhysicalOperator)', 'outputs': []}], 'pipeline_id': '5', 'predecessors': ['4'], 'successors': []}, {'incoming_tuples': '0', 'operators': [{'id': '8', 'inputs': [], 'label': 'PhysicalOperator(NES::SourcePhysicalOperator)', 'outputs': []}], 'pipeline_id': '6', 'predecessors': [], 'successors': ['7']}, {'incoming_tuples': '18106394', 'operators': [{'id': '13', 'inputs': [], 'label': 'PhysicalOperator(NES::ScanPhysicalOperator)', 'outputs': ['7']}, {'id': '7', 'inputs': ['13'], 'label': 'PhysicalOperator(NES::EventTimeWatermarkAssignerPhysicalOperator)', 'outputs': ['5']}, {'id': '5', 'inputs': ['7'], 'label': 'PhysicalOperator(NES::NLJBuildPhysicalOperator)', 'outputs': []}], 'pipeline_id': '7', 'predecessors': ['6'], 'successors': ['3']}]
-                #log.info()
-                #log.info("\npipeline_query_plan:\n" + str(out_dict["pipeline_query_plan"]))
+                out_dict["pipeline_query_plan"] = PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan)
             # else:
             #     out_dict["pipeline_query_plan"] = None
-
-            #out_dict["blabla"] = "test"
 
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict

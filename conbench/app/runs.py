@@ -5,7 +5,6 @@ import bokeh
 import flask as f
 from sqlalchemy import select
 
-from .. import log
 from ..app import rule
 from ..app._endpoint import AppEndpoint, authorize_or_terminate
 from ..app._plots import TimeSeriesPlotMixin
@@ -106,7 +105,6 @@ class ViewRun(AppEndpoint, ContextMixin, RunMixin, TimeSeriesPlotMixin):
         return self.page(benchmark_results, rundict)
 
     def _get_results(self, run_id) -> List[dict]:
-        log.info("\n\nGetting results for run")
         query = select(BenchmarkResult).filter(BenchmarkResult.run_id == run_id)
         return [r.to_dict_for_json_api() for r in current_session.scalars(query).all()]
 
