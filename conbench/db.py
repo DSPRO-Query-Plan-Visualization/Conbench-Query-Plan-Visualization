@@ -81,7 +81,7 @@ def get_tables_in_cleanup_order():
     from .entities._entity import Base as delarative_base
 
     tables = delarative_base.metadata.sorted_tables
-
+    # TODO: can I put logical plan and pipeline plan first and only as cascading should do the rest ?
     sort_by_name = ["operator_node","operator_plan","pipeline_node","pipeline_plan","logical_query_plan_node","logical_query_plan","benchmark_result"]
 
     tabledict = {t.name: t for t in tables}
