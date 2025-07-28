@@ -210,6 +210,7 @@ if Config.TESTING:
         empty_db_tables()
         return "200 OK", 200
 
+    #TODO: remove when done testing
     @api.route("/wipe-all-except-user", methods=("GET",))
     def wipe_except_user():
         log.info("clear DB tables")

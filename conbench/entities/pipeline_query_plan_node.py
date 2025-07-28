@@ -28,16 +28,16 @@ class PipelineNode(Base, EntityMixin["PipelineNode"]):
         postgresql.ARRAY(s.Numeric), default=[]
     )
     # TODO: relationship, default [] ? optional ?
-    operators: Mapped[OperatorPlan] = relationship("OperatorPlan", lazy="joined") # TODO: cascading needed on delete ?
+    operators: Mapped[OperatorPlan] = relationship("OperatorPlan", lazy="joined", cascade="all, delete-orphan") # TODO: cascading needed on delete ?
 
 class _PipelineNodeSerializer(EntitySerializer):
     def _dump(self, pipeline_node):
         # TODO: change operators to operator (singular) as thats the operator_plan and not the nodes
         result = {
-                "pipeline_id": pipeline_node.pipeline_id,
-                "predecessors": pipeline_node.predecessors or [],
-                "successors": pipeline_node.successors or [],
-                "incoming_tuples": pipeline_node.incoming_tuples,
+                "pipeline_id": int(pipeline_node.pipeline_id),
+                "predecessors": [int(x) for x in pipeline_node.predecessors] or [],
+                "successors": [int(x) for x in pipeline_node.successors] or [],
+                "incoming_tuples": int(pipeline_node.incoming_tuples),
                 "operators": OperatorPlanSerializer().many._dump(pipeline_node.operators),
             }
         return result

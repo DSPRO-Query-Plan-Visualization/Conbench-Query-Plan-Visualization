@@ -26,11 +26,11 @@ class LogicalQueryPlanNode(Base, EntityMixin["LogicalQueryPlanNode"]):
 class _LogicalQueryPlanNodeSerializer(EntitySerializer):
     def _dump(self, logical_query_plan_node):
         result = {
-                "id": logical_query_plan_node.id,
+                "id": int(logical_query_plan_node.id),
                 "label": logical_query_plan_node.label,
                 "node_type": logical_query_plan_node.node_type,
-                "inputs": logical_query_plan_node.inputs or [],
-                "outputs": logical_query_plan_node.outputs or [],
+                "inputs": [int(x) for x in logical_query_plan_node.inputs] or [],
+                "outputs": [int(x) for x in logical_query_plan_node.outputs] or [],
             }
         return result
 

@@ -28,10 +28,10 @@ class OperatorNode(Base, EntityMixin["OperatorNode"]):
 class _OperatorNodeSerializer(EntitySerializer):
     def _dump(self, operator_node):
         result = {
-                "id"        : operator_node.id,
-                "label"     : operator_node.label,
-                "inputs"    : operator_node.inputs  or [],
-                "outputs"   : operator_node.outputs or [],
+                "id"        : int(operator_node.id),
+                "label"     : (operator_node.label),
+                "inputs"    : [int(x) for x in operator_node.inputs ]or [],
+                "outputs"   : [int(x) for x in operator_node.outputs ]or [],
             }
         return result
 
