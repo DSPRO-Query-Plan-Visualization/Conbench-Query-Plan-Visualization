@@ -10,6 +10,8 @@ import flask as f
 api: f.Blueprint = f.Blueprint("api", __name__)
 rule: Callable = api.add_url_rule
 
+# overwrites the validation and adds query plans
+from queryplan.validation.validation import *
 
 from ._errors import *  # noqa
 from .auth import *  # noqa
