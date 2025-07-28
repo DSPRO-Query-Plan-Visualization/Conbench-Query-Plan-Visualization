@@ -201,28 +201,51 @@
     function resetZoom() {
         fitToViewport();
     }
-
-    // Add this function to constrain Leader Line SVG elements
     function constrainLeaderLineSVGs() {
         const viewport = document.getElementById('tree-viewport');
         const viewportRect = viewport.getBoundingClientRect();
 
-        // Find all Leader Line SVG elements in the document
-        document.querySelectorAll('svg[data-leader-line-key]').forEach(svg => {
-            const svgRect = svg.getBoundingClientRect();
+        lines.forEach((line, index) => {
+            try {
+                // Get start and end elements
+                const startElement = line.start;
+                const endElement = line.end;
 
-            // Check if SVG extends beyond viewport
-            const exceedsLeft = svgRect.left < viewportRect.left;
-            const exceedsRight = svgRect.right > viewportRect.right;
-            const exceedsTop = svgRect.top < viewportRect.top;
-            const exceedsBottom = svgRect.bottom > viewportRect.bottom;
+                if (!startElement || !endElement) return;
 
-            if (exceedsLeft || exceedsRight || exceedsTop || exceedsBottom) {
-                // Hide the SVG if it's outside viewport bounds
-                svg.style.display = 'none';
-            } else {
-                // Show the SVG if it's within bounds
-                svg.style.display = 'block';
+                const startRect = startElement.getBoundingClientRect();
+                const endRect = endElement.getBoundingClientRect();
+
+                // Calculate middle points for horizontal comparison to use the exact location of the arrow
+                // instead of the entire node container
+                const endMiddleX = endRect.left + (endRect.width / 2);
+                const startMiddleX = startRect.left + (startRect.width / 2);
+
+                // Check if both start and end elements are within viewport
+                const startInViewport =
+                    startMiddleX > viewportRect.left &&
+                    startMiddleX < viewportRect.right &&
+                    startRect.bottom > viewportRect.top &&
+                    startRect.top < viewportRect.bottom;
+
+                const endInViewport =
+                    endMiddleX > viewportRect.left &&
+                    endMiddleX < viewportRect.right &&
+                    endRect.bottom > viewportRect.top &&
+                    endRect.top < viewportRect.bottom;
+
+                // Show line only if both elements are visible in viewport
+                if (startInViewport && endInViewport) {
+                    if (line._isShown !== true) {
+                        line.show('none'); //none for instant deactivation
+                    }
+                } else {
+                    if (line._isShown !== false) {
+                        line.hide('none');
+                    }
+                }
+            } catch (e) {
+                console.warn(`Error processing line ${index}:`, e);
             }
         });
     }
@@ -286,7 +309,7 @@
             updateTransform();
             updateZoomIndicator();
             // Add constraint check after zoom
-            setTimeout(constrainLeaderLineSVGs, 20);
+            constrainLeaderLineSVGs();
         });
 
         // Mouse drag
@@ -327,7 +350,7 @@
                 isDragging = false;
                 viewport.style.cursor = 'grab';
                 // Final constraint check after drag ends
-                setTimeout(constrainLeaderLineSVGs, 10);
+                constrainLeaderLineSVGs;
             }
         });
         // Double-click to reset
@@ -352,38 +375,38 @@
                 scale = Math.min(5, scale * 1.2);
                 updateTransform();
                 updateZoomIndicator();
-                setTimeout(constrainLeaderLineSVGs, 10);
+                constrainLeaderLineSVGs();
             }
             else if (e.key === '-') {
                 e.preventDefault();
                 scale = Math.max(0.1, scale / 1.2);
                 updateTransform();
                 updateZoomIndicator();
-                setTimeout(constrainLeaderLineSVGs, 10);
+                constrainLeaderLineSVGs();
             }
             else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
                 translateX += 50;
                 updateTransform();
-                setTimeout(constrainLeaderLineSVGs, 10);
+                constrainLeaderLineSVGs();
             }
             else if (e.key === 'ArrowRight') {
                 e.preventDefault();
                 translateX -= 50;
                 updateTransform();
-                setTimeout(constrainLeaderLineSVGs, 10);
+                constrainLeaderLineSVGs();
             }
             else if (e.key === 'ArrowUp') {
                 e.preventDefault();
                 translateY += 50;
                 updateTransform();
-                setTimeout(constrainLeaderLineSVGs, 10);
+                constrainLeaderLineSVGs();
             }
             else if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 translateY -= 50;
                 updateTransform();
-                setTimeout(constrainLeaderLineSVGs, 10);
+                constrainLeaderLineSVGs();
             }
         });
 
@@ -456,32 +479,6 @@
         initializeZoomPan();
     });
 
-    function constrainSVGElements() {
-        const viewport = document.getElementById('tree-viewport');
-        const viewportRect = viewport.getBoundingClientRect();
-
-        // Find all SVG elements created by Leader Line
-        const svgElements = viewport.querySelectorAll('svg');
-
-        svgElements.forEach(svg => {
-            const svgRect = svg.getBoundingClientRect();
-
-            // If SVG extends beyond viewport, adjust its position/size
-            if (svgRect.left < viewportRect.left ||
-                svgRect.right > viewportRect.right ||
-                svgRect.top < viewportRect.top ||
-                svgRect.bottom > viewportRect.bottom) {
-
-                // Force the SVG to be clipped within viewport
-                svg.style.clipPath = `inset(
-                    ${Math.max(0, viewportRect.top - svgRect.top)}px
-                    ${Math.max(0, svgRect.right - viewportRect.right)}px
-                    ${Math.max(0, svgRect.bottom - viewportRect.bottom)}px
-                    ${Math.max(0, viewportRect.left - svgRect.left)}px
-                )`;
-            }
-        });
-    }
     function updateZoomIndicator() {
         const indicator = document.getElementById('zoom-indicator');
         if (indicator) {
@@ -720,10 +717,7 @@
             startSocket: 'bottom',
             endSocket: 'auto',
             // Explicitly set container and bounds
-            container: document.getElementById('tree-viewport'),
-            // Try different rendering approach
-            dash: false,
-            outline: false
+            container: document.getElementById('tree-viewport')
         });
     }
 
