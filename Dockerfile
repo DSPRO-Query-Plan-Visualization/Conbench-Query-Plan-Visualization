@@ -48,6 +48,7 @@ WORKDIR /app
 # to make more use of Docker container image layer caching.
 COPY conbench /app/conbench
 COPY migrations /app/migrations
+COPY queryplan /app/queryplan
 
 # TODO: make it so that .git is not needed
 # see https://github.com/conbench/conbench/pull/667
