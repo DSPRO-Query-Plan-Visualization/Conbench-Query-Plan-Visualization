@@ -48,6 +48,8 @@ WORKDIR /app
 # to make more use of Docker container image layer caching.
 COPY conbench /app/conbench
 COPY migrations /app/migrations
+
+# add the query plan folder, which contains all query plan files, to docker
 COPY queryplan /app/queryplan
 
 # TODO: make it so that .git is not needed

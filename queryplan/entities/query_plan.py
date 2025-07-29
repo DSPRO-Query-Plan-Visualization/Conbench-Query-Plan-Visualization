@@ -3,7 +3,7 @@ from flask import g
 from conbench.entities.benchmark_result import BenchmarkResult
 from sqlalchemy.dialects import postgresql
 import sqlalchemy as s
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import List
 from sqlalchemy.orm import Mapped, relationship
 from sqlalchemy import event
 from conbench.entities._entity import (
@@ -13,7 +13,6 @@ from conbench.entities._entity import (
     NotNull,
     Nullable,
     genprimkey,
-    to_float,
 )
 
 """
@@ -22,6 +21,9 @@ The last migration  "e15e8b226491_benchmark_id_ondelete_cascade_query_" fixed th
 issues, so deleting a benchmark result should delete all dependant query plans without issue.
 The reason for creating the tables like this is to keep things separate,
 splitting the logic and thus failure points as much as possible.
+
+If the migration can't be applied or there are still issues that persist, updating the
+sort_by_name[] list in get_tables_in_cleanup_order() in db.py should fix most issues.
 """
 
 import logging
@@ -102,12 +104,12 @@ class PipelinePlan(Base, EntityMixin["PipelinePlan"]):
 """
 Event based creation of the benchmark_result dependant query plans.
 'benchmark_request_json' is stored before hand by the
-'stash_benchmark_data()' function in ..api/results, which gets 
+'stash_benchmark_data()' function in queryplan/api/results, which gets 
 triggered by a POST request to '/api/benchmarks/'.
+For more info see the explanation in queryplan/api/results.py.
 """
-
 @event.listens_for(BenchmarkResult, "after_insert")
-def create_logical_query_plan(mapper, connection, target):
+def create_query_plan(mapper, connection, target):
     try:
         data = g.get("benchmark_request_json", {})
         benchmark_id = target.id
@@ -178,10 +180,11 @@ def create_logical_query_plan(mapper, connection, target):
                         )
                     )
     except Exception as e:
-        logging.exception("Failed to create query plan: %s", e)
+        log.exception("Failed to create query plan: %s", e)
 
 
 # ============================ Serializer ============================:
+# Logical serializer
 class _LogicalQueryPlanSerializer(EntitySerializer):
     def _dump(self, plan):
         result = []
@@ -199,6 +202,7 @@ class LogicalQueryPlanSerializer:
     one = _LogicalQueryPlanSerializer()
     many = _LogicalQueryPlanSerializer(many=True)
 
+# Pipeline serializer
 class _PipelinePlanSerializer(EntitySerializer):
     def _dump(self, plan):
         result = []

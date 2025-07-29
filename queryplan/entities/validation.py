@@ -1,3 +1,7 @@
+import marshmallow
+import conbench.util
+from conbench.entities.benchmark_result import _BenchmarkResultCreateSchema, BenchmarkResultFacadeSchema
+
 """
 This file is used to update the marshmallow schema, so query plans sent to the server get properly validated.
 As a reference this is the current structure of the logical query plan
@@ -44,10 +48,6 @@ they are expected to have at most one input and output element.
 The logical plan, same as the pipeline plan, can have multiple input and output elements
 (predecessor and successor for the pipeline plan).
 """
-
-import marshmallow
-import conbench.util
-from conbench.entities.benchmark_result import _BenchmarkResultCreateSchema, BenchmarkResultFacadeSchema
 
 # marshmallow schema for the logical query plan
 class LogicalQueryPlanNodeSchema(marshmallow.Schema):
@@ -121,4 +121,5 @@ class ExtendedSchema(_BenchmarkResultCreateSchema):
         required=False,
     )
 
+# Overwrites the current create schema which is used for validation with our own extension
 BenchmarkResultFacadeSchema.create = ExtendedSchema()

@@ -161,6 +161,8 @@ class BenchmarkResult:
     github: Dict[str, str] = field(
         default_factory=_machine_info.gh_commit_info_from_env
     )
+    # declare query plans like this, otherwise they can't be added
+    # to the BenchmarkResult in benchmark.py
     serializedPipelinePlan: List[Dict[str, Any]] = field(default_factory=list)
     serializedLogicalPlan: List[Dict[str, Any]] = field(default_factory=list)
 
