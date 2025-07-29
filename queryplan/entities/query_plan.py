@@ -187,11 +187,11 @@ class _LogicalQueryPlanSerializer(EntitySerializer):
         result = []
         for node in plan.logical_query_plan_node:
             result.append({
-                "id"        : node.id,
+                "id"        : int(node.id),
                 "label"     : node.label,
                 "node_type" : node.node_type,
-                "inputs"    : [int(x) for x in node.inputs  or []],
-                "outputs"   : [int(x) for x in node.outputs or []],
+                "inputs"    : [int(x) for x in node.inputs]  if node.inputs  else [],
+                "outputs"   : [int(x) for x in node.outputs] if node.outputs else [],
             })
         return result
 
