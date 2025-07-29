@@ -4,6 +4,11 @@ Revision ID: e15e8b226491
 Revises: 99895af5dae2
 Create Date: 2025-07-28 19:38:09.273621
 
+This migration aims to add the ondelete=cascade functionality to benchmark_result
+entries or to be more specific the dependent query plans.
+Since query plans didn't exist before this migration we first create them
+and then add the constraint for the upgrade() function.
+Likewise for the downgrade() function we remove the constraints and delete the tables.
 """
 
 from alembic import op
@@ -19,7 +24,7 @@ depends_on = None
 
 
 def upgrade():
-    # Pipeline first
+    # ======================== Create pipeline first ========================
     op.create_table(
         "pipeline_plan",
         sa.Column("id", sa.String(length=50), nullable=False),
@@ -75,7 +80,7 @@ def upgrade():
         sa.PrimaryKeyConstraint("operator_node_id"),
     )
 
-    # Logical next
+    # ========================= Create logical next =========================
     op.create_table(
         "logical_query_plan",
         sa.Column("id", sa.String(length=50), autoincrement=False, nullable=False),
@@ -106,7 +111,7 @@ def upgrade():
         sa.PrimaryKeyConstraint("logical_query_plan_id", "id"),  # Composite primary key
     )
 
-    # Re-create them with ON DELETE CASCADE
+    # ============ Add ondelete=cascade to the query plan tables ============
     op.create_foreign_key(
         "pipeline_plan_benchmark_id_fkey",
         "pipeline_plan",
@@ -158,6 +163,7 @@ def upgrade():
 
 
 def downgrade():
+    # ========================== Drop constraints ===========================
     op.drop_constraint(
         "pipeline_plan_benchmark_id_fkey", "pipeline_plan", type_="foreignkey"
     )
@@ -178,6 +184,8 @@ def downgrade():
     op.drop_constraint(
         "operator_node_operator_plan_id_fkey", "operator_node", type_="foreignkey"
     )
+
+    # ============================= Drop tables =============================
 
     op.drop_table("operator_node")
     op.drop_table("operator_plan")

@@ -107,6 +107,10 @@ def _init_flask_application(app):
 
     from conbench.dbsession import flask_scoped_session
 
+    # imported so the html can be loaded from queryplan/templates/
+    # alternatively add the file directly to conbench/templates/
+    from queryplan import queryplan_bp
+
     from .api import api
     from .app import app as blueprint_app
     from .config import Config
@@ -143,6 +147,9 @@ def _init_flask_application(app):
     if Config.CREATE_ALL_TABLES:
         log.debug("Config.CREATE_ALL_TABLES appears to be set, call create_all()")
         create_all()
+
+    # register queryplan html, see import
+    app.register_blueprint(queryplan_bp)
 
     app.register_blueprint(blueprint_app, url_prefix="/")
     app.register_blueprint(api, url_prefix="/api")

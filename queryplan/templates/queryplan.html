@@ -1,0 +1,12 @@
+{% block scripts %}
+<script>
+    // this function fetches the query plan from the api
+    document.addEventListener("DOMContentLoaded", function () {
+        const myElement = document.getElementById("custom-output");
+        const benchmarkId = {{ benchmark.id | tojson | safe }}
+        fetch(`/api/queryplan/${benchmarkId}`)
+            .then(response => response.json())
+            .then(data => console.log(data))    });
+</script>
+{%  endblock %}
+<div id="custom-output">Loading...</div>

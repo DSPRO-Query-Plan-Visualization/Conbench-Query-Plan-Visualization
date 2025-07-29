@@ -27,7 +27,7 @@ splitting the logic and thus failure points as much as possible.
 import logging
 log = logging.getLogger(__name__)
 
-# Logical Plan:
+# =================================== Logical Plan ===================================:
 
 class LogicalQueryPlanNode(Base, EntityMixin["LogicalQueryPlanNode"]):
     __tablename__ = "logical_query_plan_node"
@@ -48,7 +48,7 @@ class LogicalQueryPlan(Base, EntityMixin["LogicalQueryPlan"]):
     benchmark_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("benchmark_result.id"))
     logical_query_plan_node: Mapped[List[LogicalQueryPlanNode]] = relationship("LogicalQueryPlanNode", lazy="selectin", cascade="all, delete-orphan")
 
-# =========== Pipeline Plan ===========:
+# ================================== Pipeline Plan ===================================:
 
 class OperatorNode(Base, EntityMixin["OperatorNode"]):
     __tablename__ = "operator_node"
@@ -100,7 +100,7 @@ class PipelinePlan(Base, EntityMixin["PipelinePlan"]):
 
 
 """
-Event based creation of the benchmark_result dependant logical plans.
+Event based creation of the benchmark_result dependant query plans.
 'benchmark_request_json' is stored before hand by the
 'stash_benchmark_data()' function in ..api/results, which gets 
 triggered by a POST request to '/api/benchmarks/'.
@@ -112,7 +112,7 @@ def create_logical_query_plan(mapper, connection, target):
         data = g.get("benchmark_request_json", {})
         benchmark_id = target.id
 
-        # === Logical Query Plan ===
+        # =================== Logical Plan ===================
         serialized_logical = data.get("serializedLogicalPlan")
         if serialized_logical:
             logical_plan_id = str(uuid4())
@@ -134,7 +134,7 @@ def create_logical_query_plan(mapper, connection, target):
                     )
                 )
 
-        # === Pipeline Plan ===
+        # ================== Pipeline Plan ===================
         serialized_pipeline = data.get("serializedPipelinePlan")
         if serialized_pipeline:
             pipeline_plan_id = str(uuid4())
@@ -179,3 +179,44 @@ def create_logical_query_plan(mapper, connection, target):
                     )
     except Exception as e:
         logging.exception("Failed to create query plan: %s", e)
+
+
+# ============================ Serializer ============================:
+class _LogicalQueryPlanSerializer(EntitySerializer):
+    def _dump(self, plan):
+        result = []
+        for node in plan.logical_query_plan_node:
+            result.append({
+                "id"        : node.id,
+                "label"     : node.label,
+                "node_type" : node.node_type,
+                "inputs"    : [int(x) for x in node.inputs  or []],
+                "outputs"   : [int(x) for x in node.outputs or []],
+            })
+        return result
+
+class LogicalQueryPlanSerializer:
+    one = _LogicalQueryPlanSerializer()
+    many = _LogicalQueryPlanSerializer(many=True)
+
+class _PipelinePlanSerializer(EntitySerializer):
+    def _dump(self, plan):
+        result = []
+        for pnode in plan.pipeline_node:
+            result.append({
+            "pipeline_id"       : int(pnode.pipeline_id),
+            "incoming_tuples"   : int(pnode.incoming_tuples),
+            "predecessors"      : [int(x) for x in pnode.predecessors] if pnode.predecessors else [],
+            "successors"        : [int(x) for x in pnode.successors]   if pnode.successors   else [],
+            "operators"         : [{
+                "id"        : int(onode.id),
+                "label"     : onode.label,
+                "inputs"    : [int(x) for x in onode.inputs]  if onode.inputs  else [],
+                "outputs"   : [int(x) for x in onode.outputs] if onode.outputs else [],
+            } for onode in pnode.operators.operator_nodes ]
+        })
+        return result
+
+class PipelinePlanSerializer:
+    one = _PipelinePlanSerializer()
+    many = _PipelinePlanSerializer(many=True) # gets jsonnified
