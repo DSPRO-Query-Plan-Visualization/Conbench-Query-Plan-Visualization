@@ -26,7 +26,8 @@ splitting the logic and thus failure points as much as possible.
 
 import logging
 log = logging.getLogger(__name__)
-log.info("Query Plan start")
+
+# Logical Plan:
 
 class LogicalQueryPlanNode(Base, EntityMixin["LogicalQueryPlanNode"]):
     __tablename__ = "logical_query_plan_node"
@@ -47,37 +48,134 @@ class LogicalQueryPlan(Base, EntityMixin["LogicalQueryPlan"]):
     benchmark_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("benchmark_result.id"))
     logical_query_plan_node: Mapped[List[LogicalQueryPlanNode]] = relationship("LogicalQueryPlanNode", lazy="selectin", cascade="all, delete-orphan")
 
+# =========== Pipeline Plan ===========:
+
+class OperatorNode(Base, EntityMixin["OperatorNode"]):
+    __tablename__ = "operator_node"
+    # foreign and primary key:
+    operator_node_id: Mapped[str] = NotNull(s.String(50), primary_key=True, default=genprimkey)
+    operator_plan_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("operator_plan.id"))
+    # content:
+    id: Mapped[int] = NotNull(s.Numeric)
+    label: Mapped[str] = Nullable(s.Text)
+    inputs: Mapped[list] = Nullable(
+        postgresql.ARRAY(s.Numeric), default=[]
+    )
+    outputs: Mapped[list] = Nullable(
+        postgresql.ARRAY(s.Numeric), default=[]
+    )
+
+class OperatorPlan(Base, EntityMixin["OperatorPlan"]):
+    __tablename__ = "operator_plan"
+    # plan id and connections
+    id: Mapped[str] = NotNull(s.String(50), primary_key=True, default=genprimkey)
+    pipeline_node_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("pipeline_node.id"))
+    operator_nodes: Mapped[List[OperatorNode]] = relationship("OperatorNode", lazy="selectin", cascade="all, delete-orphan")
+    # possible metadata:
+
+class PipelineNode(Base, EntityMixin["PipelineNode"]):
+    __tablename__ = "pipeline_node"
+    # id and connection:
+    id: Mapped[str] = NotNull(s.String(50), primary_key=True, default=genprimkey)
+    pipeline_plan_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("pipeline_plan.id"))
+
+    # content:
+    pipeline_id: Mapped[int] = NotNull(s.Numeric)
+    incoming_tuples: Mapped[int] = NotNull(s.Numeric)
+    predecessors: Mapped[list] = Nullable(
+        postgresql.ARRAY(s.Numeric), default=[]
+    )
+    successors: Mapped[list] = Nullable(
+        postgresql.ARRAY(s.Numeric), default=[]
+    )
+    operators: Mapped[OperatorPlan] = relationship("OperatorPlan", lazy="joined", cascade="all, delete-orphan")
+
+class PipelinePlan(Base, EntityMixin["PipelinePlan"]):
+    __tablename__ = "pipeline_plan"
+    # plan id and connections
+    id: Mapped[str] = NotNull(s.String(50), primary_key=True, default=genprimkey)
+    benchmark_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("benchmark_result.id"))
+    pipeline_node: Mapped[List[PipelineNode]] = relationship("PipelineNode", lazy="selectin", cascade="all, delete-orphan")
+    # possible metadata:
+
+
 """
 Event based creation of the benchmark_result dependant logical plans.
 'benchmark_request_json' is stored before hand by the
 'stash_benchmark_data()' function in ..api/results, which gets 
 triggered by a POST request to '/api/benchmarks/'.
 """
+
 @event.listens_for(BenchmarkResult, "after_insert")
 def create_logical_query_plan(mapper, connection, target):
     try:
         data = g.get("benchmark_request_json", {})
-        serialized_plan = data.get("serializedLogicalPlan")
-        if not serialized_plan:
-            return
+        benchmark_id = target.id
 
-        logical_plan_id = str(uuid4())
-        # Insert the LogicalQueryPlan
-        connection.execute(
-            LogicalQueryPlan.__table__.insert().values( id = logical_plan_id,
-                                                        benchmark_id = target.id )
-        )
-        # Insert each LogicalQueryPlanNode
-        for node in serialized_plan:
+        # === Logical Query Plan ===
+        serialized_logical = data.get("serializedLogicalPlan")
+        if serialized_logical:
+            logical_plan_id = str(uuid4())
             connection.execute(
-                LogicalQueryPlanNode.__table__.insert().values(
-                    logical_query_plan_id = logical_plan_id,
-                    id          =node["id"],
-                    label       =node.get("label"),
-                    node_type   =node.get("nodeType"),
-                    inputs      =node.get("inputs", []),
-                    outputs     =node.get("outputs", [])
+                LogicalQueryPlan.__table__.insert().values(
+                    id=logical_plan_id,
+                    benchmark_id=benchmark_id
                 )
             )
+            for node in serialized_logical:
+                connection.execute(
+                    LogicalQueryPlanNode.__table__.insert().values(
+                        logical_query_plan_id=logical_plan_id,
+                        id=node["id"],
+                        label=node.get("label"),
+                        node_type=node.get("nodeType"),
+                        inputs=node.get("inputs", []),
+                        outputs=node.get("outputs", [])
+                    )
+                )
+
+        # === Pipeline Plan ===
+        serialized_pipeline = data.get("serializedPipelinePlan")
+        if serialized_pipeline:
+            pipeline_plan_id = str(uuid4())
+            connection.execute(
+                PipelinePlan.__table__.insert().values(
+                    id=pipeline_plan_id,
+                    benchmark_id=benchmark_id
+                )
+            )
+
+            for pipeline in serialized_pipeline:
+                pipeline_node_id = str(uuid4())
+                connection.execute(
+                    PipelineNode.__table__.insert().values(
+                        id=pipeline_node_id,
+                        pipeline_plan_id=pipeline_plan_id,
+                        pipeline_id=pipeline["pipelineId"],
+                        incoming_tuples=pipeline["incomingTuples"],
+                        predecessors=pipeline.get("predecessors", []),
+                        successors=pipeline.get("successors", [])
+                    )
+                )
+
+                operator_plan_id = str(uuid4())
+                connection.execute(
+                    OperatorPlan.__table__.insert().values(
+                        id=operator_plan_id,
+                        pipeline_node_id=pipeline_node_id
+                    )
+                )
+
+                for operator in pipeline.get("operators", []):
+                    connection.execute(
+                        OperatorNode.__table__.insert().values(
+                            operator_node_id=str(uuid4()),
+                            operator_plan_id=operator_plan_id,
+                            id=operator["id"],
+                            label=operator.get("label"),
+                            inputs=operator.get("inputs", []),
+                            outputs=operator.get("outputs", [])
+                        )
+                    )
     except Exception as e:
-        logging.exception("Failed to create logical query plan: %s", e)
+        logging.exception("Failed to create query plan: %s", e)
