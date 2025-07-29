@@ -1,12 +1,755 @@
+{% block head %}
+<style>
+    .tree {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 30px;
+        padding: 20px;
+        transform-origin: 0 0; /* Important: set origin to top-left for proper calculations */
+
+    }
+
+    /* Add the missing tree-row class for side-by-side layout */
+    .tree-row {
+        display: flex;
+        gap: 40px;
+        justify-content: center;
+    }
+
+    /* Container for zoom/pan viewport */
+    .tree-viewport {
+        width: 100%;
+        height: 80vh;
+        overflow: hidden;
+        border: 1px solid #ccc;
+        position: relative;
+        cursor: grab;
+        background: #fafafa;
+        outline: none;
+    }
+
+    .tree-viewport:active {
+        cursor: grabbing;
+    }
+
+
+    /* Force any SVG elements to stay within viewport bounds */
+    .tree-viewport svg,
+    .tree-viewport .leader-line svg {
+        max-width: 100% !important;
+        max-height: 100% !important;
+        clip-path: inset(0) !important;
+    }
+
+    /* A small hint about keyboard shortcuts */
+    .viewport-hint {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 5px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        color: #666;
+        pointer-events: none;
+        opacity: 0.7;
+        z-index: 100;
+    }
+
+    /* A subtle zoom indicator */
+    .zoom-indicator {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #666;
+        pointer-events: none;
+        z-index: 100;
+    }
+
+    /* pipeline and logical node -> main container (grey) */
+    .node-container {
+        border: 1px solid #aaa;
+        padding: 10px;
+        border-radius: 10px;
+        background-color: #f0f0f0;
+        min-width: 100px;
+        max-width: 520px;
+        word-wrap: break-word;
+    }
+
+    /* pipeline and logical node caption */
+    .node-caption {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: bold;
+        margin-bottom: 10px;
+        font-size: 16px;
+    }
+
+    /* incoming tuples */
+    .incoming-tuples {
+        font-size: 12px;
+        color: #666;
+        font-weight: normal;
+    }
+
+    /* container holding the operators, not needed for logical as there is only one label */
+    .operators {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    /* operator and logical label box (blue) */
+    .node-content {
+        background-color: #d0e1f9;
+        padding: 5px;
+        border-radius: 6px;
+        font-size: 14px;
+        border: 1px solid #888;
+    }
+
+    @media (max-width: 768px) {
+        .tree {
+            gap: 20px;
+            padding: 10px;
+        }
+        .tree-row {
+            gap: 20px;
+        }
+        .node-container {
+            padding: 6px;
+            min-width: 70px;
+            max-width: 320px;
+        }
+        .node-caption {
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+        .incoming-tuples {
+            font-size: 10px;
+        }
+        .operators {
+            gap: 5px;
+        }
+        .node-content {
+            font-size: 12px;
+            padding: 4px;
+        }
+    }
+
+
+</style>
+{% endblock %}
+
 {% block scripts %}
-<script>
+    <script src="https://cdn.jsdelivr.net/npm/leader-line@1.0.7/leader-line.min.js"></script>
+<script type="module">
+
     // this function fetches the query plan from the api
     document.addEventListener("DOMContentLoaded", function () {
         const myElement = document.getElementById("custom-output");
         const benchmarkId = {{ benchmark.id | tojson | safe }}
         fetch(`/api/queryplan/${benchmarkId}`)
             .then(response => response.json())
-            .then(data => console.log(data))    });
+            .then(data => {
+                const pipelinePlan = data.serializedPipelinePlan;
+                const logicalPlan = data.serializedLogicalPlan;
+                const treeContainer = document.getElementById('tree-container');
+                let lines = [];
+
+                // Zoom and pan state
+                let scale = 1;
+                let translateX = 0;
+                let translateY = 0;
+
+                // button logic for switching between pipeline and logical plan view
+                const toggleButton = document.getElementById('toggle-view');
+                let currentView = 'pipeline';
+                toggleButton.addEventListener('click', () => {
+                    if (currentView === 'pipeline') {
+                        currentView = 'logical';
+                        toggleButton.textContent = 'Switch to Pipeline Plan';
+                        renderLogicalPlan();
+                    } else {
+                        currentView = 'pipeline';
+                        toggleButton.textContent = 'Switch to Logical Plan';
+                        renderPipelinePlan();
+                    }
+                });
+                function fitToViewport() {
+                    const viewport = document.getElementById('tree-viewport');
+                    const container = document.getElementById('tree-container');
+
+                    if (!viewport || !container) return;
+
+                    // Temporarily reset transform to measure natural content size
+                    container.style.transform = 'none';
+
+                    // Get dimensions
+                    const viewportRect = viewport.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+
+                    // Add some padding (5% on each side)
+                    const padding = 0.05;
+                    const availableWidth = viewportRect.width * (1 - padding * 2);
+                    const availableHeight = viewportRect.height * (1 - padding * 2);
+
+                    // Calculate scale to fit content in viewport
+                    const scaleX = availableWidth / containerRect.width;
+                    const scaleY = availableHeight / containerRect.height;
+
+                    // Use the smaller scale to ensure content fits in both dimensions
+                    scale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 100%
+
+                    // Calculate center position with the new scale
+                    const scaledWidth = containerRect.width * scale;
+                    const scaledHeight = containerRect.height * scale;
+
+                    translateX = (viewportRect.width - scaledWidth) / 2;
+                    translateY = (viewportRect.height - scaledHeight) / 2;
+
+                    updateTransform();
+                    updateZoomIndicator();
+                }
+
+                function resetZoom() {
+                    fitToViewport();
+                }
+                function constrainLeaderLineSVGs() {
+                    const viewport = document.getElementById('tree-viewport');
+                    const viewportRect = viewport.getBoundingClientRect();
+
+                    lines.forEach((line, index) => {
+                        try {
+                            // Get start and end elements
+                            const startElement = line.start;
+                            const endElement = line.end;
+
+                            if (!startElement || !endElement) return;
+
+                            const startRect = startElement.getBoundingClientRect();
+                            const endRect = endElement.getBoundingClientRect();
+
+                            // Calculate middle points for horizontal comparison to use the exact location of the arrow
+                            // instead of the entire node container
+                            const endMiddleX = endRect.left + (endRect.width / 2);
+                            const startMiddleX = startRect.left + (startRect.width / 2);
+
+                            // Check if both start and end elements are within viewport
+                            const startInViewport =
+                                startMiddleX > viewportRect.left &&
+                                startMiddleX < viewportRect.right &&
+                                startRect.bottom > viewportRect.top &&
+                                startRect.top < viewportRect.bottom;
+
+                            const endInViewport =
+                                endMiddleX > viewportRect.left &&
+                                endMiddleX < viewportRect.right &&
+                                endRect.bottom > viewportRect.top &&
+                                endRect.top < viewportRect.bottom;
+
+                            // Show line only if both elements are visible in viewport
+                            if (startInViewport && endInViewport) {
+                                if (line._isShown !== true) {
+                                    line.show('none'); //none for instant deactivation
+                                }
+                            } else {
+                                if (line._isShown !== false) {
+                                    line.hide('none');
+                                }
+                            }
+                        } catch (e) {
+                            console.warn(`Error processing line ${index}:`, e);
+                        }
+                    });
+                }
+
+                // Modified updateTransform function
+                function updateTransform() {
+                    const container = document.getElementById('tree-container');
+                    if (container) {
+                        container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+
+                    // Debounce line updates to improve performance
+                    clearTimeout(window.lineUpdateTimeout);
+                    window.lineUpdateTimeout = setTimeout(() => {
+                        lines.forEach(line => {
+                            try {
+                                line.position();
+                            } catch (e) {
+                                console.warn('Leader line positioning error:', e);
+                            }
+                        });
+                        // Add constraint check after positioning
+                        constrainLeaderLineSVGs();
+                    }, 5);
+                }
+            }
+
+                // Update initialization to fit content properly on initial load
+                function initializeZoomPan() {
+                    const viewport = document.getElementById('tree-viewport');
+                    const container = document.getElementById('tree-container');
+                    const zoomIndicator = document.getElementById('zoom-indicator');
+
+                    if (!viewport || !container) return;
+
+                    // Make viewport focusable
+                    viewport.setAttribute('tabindex', '0');
+                    viewport.focus();
+
+                    // Fit content to viewport on initial load
+                    setTimeout(() => {
+                        fitToViewport();
+                    }, 100);
+
+                    // Mouse wheel zoom
+                    viewport.addEventListener('wheel', (e) => {
+                        e.preventDefault();
+
+                        const rect = viewport.getBoundingClientRect();
+                        const mouseX = e.clientX - rect.left;
+                        const mouseY = e.clientY - rect.top;
+
+                        const zoomFactor = e.deltaY > 0 ? 0.85 : 1.15;
+                        const newScale = Math.max(0.1, Math.min(5, scale * zoomFactor));
+
+                        // Zoom towards mouse cursor
+                        const scaleChange = newScale / scale;
+                        translateX = mouseX - scaleChange * (mouseX - translateX);
+                        translateY = mouseY - scaleChange * (mouseY - translateY);
+                        scale = newScale;
+
+                        updateTransform();
+                        updateZoomIndicator();
+                        // Add constraint check after zoom
+                        constrainLeaderLineSVGs();
+                    });
+
+                    // Mouse drag
+                    let isDragging = false;
+                    let lastMouseX = 0;
+                    let lastMouseY = 0;
+
+                    viewport.addEventListener('mousedown', (e) => {
+                        if (e.button === 0) {
+                            isDragging = true;
+                            lastMouseX = e.clientX;
+                            lastMouseY = e.clientY;
+                            viewport.style.cursor = 'grabbing';
+                            viewport.focus();
+                            e.preventDefault();
+                        }
+                    });
+
+                    document.addEventListener('mousemove', (e) => {
+                        if (isDragging) {
+                            const deltaX = e.clientX - lastMouseX;
+                            const deltaY = e.clientY - lastMouseY;
+
+                            translateX += deltaX;
+                            translateY += deltaY;
+
+                            lastMouseX = e.clientX;
+                            lastMouseY = e.clientY;
+
+                            updateTransform();
+                            // Add constraint check during drag
+                            constrainLeaderLineSVGs();
+                        }
+                    });
+
+                    document.addEventListener('mouseup', () => {
+                        if (isDragging) {
+                            isDragging = false;
+                            viewport.style.cursor = 'grab';
+                            // Final constraint check after drag ends
+                            constrainLeaderLineSVGs;
+                        }
+                    });
+                    // Double-click to reset
+                    viewport.addEventListener('dblclick', (e) => {
+                        e.preventDefault();
+                        resetZoom();
+                        viewport.focus();
+                    });
+
+                    // Keyboard shortcuts
+                    viewport.addEventListener('keydown', (e) => {
+                        if (e.key === 'r' || e.key === 'R') {
+                            e.preventDefault();
+                            resetZoom();
+                        }
+                        else if (e.key === 'f' || e.key === 'F') {
+                            e.preventDefault();
+                            fitToViewport();
+                        }
+                        else if (e.key === '+') {
+                            e.preventDefault();
+                            scale = Math.min(5, scale * 1.2);
+                            updateTransform();
+                            updateZoomIndicator();
+                            constrainLeaderLineSVGs();
+                        }
+                        else if (e.key === '-') {
+                            e.preventDefault();
+                            scale = Math.max(0.1, scale / 1.2);
+                            updateTransform();
+                            updateZoomIndicator();
+                            constrainLeaderLineSVGs();
+                        }
+                        else if (e.key === 'ArrowLeft') {
+                            e.preventDefault();
+                            translateX += 50;
+                            updateTransform();
+                            constrainLeaderLineSVGs();
+                        }
+                        else if (e.key === 'ArrowRight') {
+                            e.preventDefault();
+                            translateX -= 50;
+                            updateTransform();
+                            constrainLeaderLineSVGs();
+                        }
+                        else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            translateY += 50;
+                            updateTransform();
+                            constrainLeaderLineSVGs();
+                        }
+                        else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            translateY -= 50;
+                            updateTransform();
+                            constrainLeaderLineSVGs();
+                        }
+                    });
+
+                    // Touch support - add constraint checks here too
+                    let initialTouchDistance = 0;
+                    let initialScale = 1;
+                    let touchStartX = 0;
+                    let touchStartY = 0;
+
+                    viewport.addEventListener('touchstart', (e) => {
+                        if (e.touches.length === 2) {
+                            // Pinch zoom
+                            const touch1 = e.touches[0];
+                            const touch2 = e.touches[1];
+                            initialTouchDistance = Math.sqrt(
+                                Math.pow(touch2.clientX - touch1.clientX, 2) +
+                                Math.pow(touch2.clientY - touch1.clientY, 2)
+                            );
+                            initialScale = scale;
+                        } else if (e.touches.length === 1) {
+                            // Pan
+                            touchStartX = e.touches[0].clientX;
+                            touchStartY = e.touches[0].clientY;
+                        }
+                        e.preventDefault();
+                    });
+
+                    viewport.addEventListener('touchmove', (e) => {
+                        if (e.touches.length === 2) {
+                            // Pinch zoom
+                            const touch1 = e.touches[0];
+                            const touch2 = e.touches[1];
+                            const currentDistance = Math.sqrt(
+                                Math.pow(touch2.clientX - touch1.clientX, 2) +
+                                Math.pow(touch2.clientY - touch1.clientY, 2)
+                            );
+
+                            scale = Math.max(0.1, Math.min(5, initialScale * (currentDistance / initialTouchDistance)));
+                            updateTransform();
+                            updateZoomIndicator();
+                            constrainLeaderLineSVGs();
+                        } else if (e.touches.length === 1) {
+                            // Pan
+                            const deltaX = e.touches[0].clientX - touchStartX;
+                            const deltaY = e.touches[0].clientY - touchStartY;
+
+                            translateX += deltaX;
+                            translateY += deltaY;
+
+                            touchStartX = e.touches[0].clientX;
+                            touchStartY = e.touches[0].clientY;
+
+                            updateTransform();
+                            constrainLeaderLineSVGs();
+                        }
+                        e.preventDefault();
+                    });
+
+                    // Window resize handler to re-fit content
+                    window.addEventListener('resize', () => {
+                        setTimeout(() => {
+                            fitToViewport();
+                            constrainLeaderLineSVGs();
+                        }, 100);
+                    });
+                }
+
+                function updateZoomIndicator() {
+                    const indicator = document.getElementById('zoom-indicator');
+                    if (indicator) {
+                        indicator.textContent = `${Math.round(scale * 100)}%`;
+                    }
+                }
+                function clearTree() {
+                    if (treeContainer) {
+                        treeContainer.innerHTML = '';
+                    }
+                    lines.forEach(l => {
+                        try {
+                            l.remove();
+                        } catch (e) {
+                            console.warn('Error removing line:', e);
+                        }
+                    });
+                    lines = [];
+
+                    // Reset zoom and pan state
+                    scale = 1;
+                    translateX = 0;
+                    translateY = 0;
+                    updateTransform();
+                    updateZoomIndicator();
+                }
+                function renderPipelinePlan() {
+                    clearTree();
+                    if(!pipelinePlan || !pipelinePlan.length) return;
+
+                    // creates the tree from bottom up
+                    // assigns levels to each pipeline to form the tree
+                    const sink = pipelinePlan.find(p => p.successors.length === 0);
+                    const levelsMap = new Map();
+                    const pipelineMap = new Map(pipelinePlan.map(p => [p.pipeline_id, p]));
+
+                    // recursively creates the levelsMap which assigns each pipelineId to a level
+                    function assignLevelsBottomUp(pid, level = 0) {
+                        if (levelsMap.has(pid) && levelsMap.get(pid) <= level) return;
+                        levelsMap.set(pid, level);
+                        const pipeline = pipelineMap.get(pid);
+                        pipeline.predecessors?.forEach(pred => assignLevelsBottomUp(pred, level + 1));
+                    }
+
+                    // start with the sink
+                    assignLevelsBottomUp(sink.pipeline_id);
+
+                    // creates 2D array: levels which contains all pipelines at the correct level
+                    const maxLevel = Math.max(...levelsMap.values());
+                    const levels = Array.from({ length: maxLevel + 1 }, () => []);
+                    pipelinePlan.forEach(p => {
+                        const level = levelsMap.get(p.pipeline_id);
+                        if (level !== undefined) levels[level].push(p);
+                    });
+
+                    // creates the html elements for each column and row in levels
+                    // also sorts and adds the operators
+                    // reversing puts the sources at the top and the sink to the bottom
+                    levels.reverse().forEach(row => {
+                        // create a row for each level
+                        const rowDiv = document.createElement('div');
+                        rowDiv.className = 'tree-row';
+
+                        // for each column in each row/ level create pipeline container
+                        row.forEach(pipeline => {
+                            // pipeline container
+                            const pipelineDiv = document.createElement('div');
+                            pipelineDiv.className = 'node-container';
+                            pipelineDiv.id = `pipeline-${pipeline.pipeline_id}`;
+
+                            // pipeline caption which contains the id and incoming tuples, also put &nbsp (space) between
+                            // so they don't touch in case the pipeline is too thin or the number is too huge
+                            const caption = document.createElement('div');
+                            caption.className = 'node-caption';
+                            caption.innerHTML = `
+                                <span class="pipeline-id">Pipeline ${pipeline.pipeline_id}</span>
+                                <span>&nbsp;&nbsp;&nbsp;</span>
+                                <span class="incoming-tuples">${pipeline.incoming_tuples.toLocaleString()} tuples</span>
+                            `;
+                            pipelineDiv.appendChild(caption);
+
+                            // since the operators in the pipeline plan are not ordered,
+                            // they need to be sorted first
+                            // operator nodes can have at max one parent and child
+                            function sortOperators(operators){
+                                const result = [];
+                                if(operators.length === 0) return result;
+                                // add start node
+                                let node = operators.find(o => o.inputs.length === 0);
+                                result.push(node);
+                                // add all other nodes
+                                while(node.outputs.length > 0){
+                                    if(node.inputs.length > 1 || node.outputs.length > 1) console.warn("WARNING MORE THAN 1 PARENT OR CHILD IN OPERATOR.");
+                                    node = operators.find(o => o.id === node.outputs[0]);
+                                    result.push(node);
+                                }
+                                return result;
+                            }
+
+                            // operator container
+                            const opsContainer = document.createElement('div');
+                            opsContainer.className = 'operators';
+                            const sortedOperators = sortOperators(pipeline.operators);
+                            sortedOperators.forEach(op => {
+                                const opDiv = document.createElement('div');
+                                opDiv.className = 'node-content';
+                                opDiv.textContent = `#${op.id}: ${op.label}`;
+                                opsContainer.appendChild(opDiv);
+                            });
+                            // add divs to row
+                            pipelineDiv.appendChild(opsContainer);
+                            rowDiv.appendChild(pipelineDiv);
+                        });
+                        // add row to tree
+                        treeContainer.appendChild(rowDiv);
+                    });
+                    // Draw arrows after DOM is fully updated
+                    setTimeout(() => {
+                        drawArrows();
+                        fitToViewport();
+                    }, 5);
+                }
+
+                function renderLogicalPlan() {
+                    clearTree();
+                    if(!logicalPlan || !logicalPlan.length) return;
+
+                    // creates the tree from bottom up
+                    // assigns levels to each logical node to form the tree
+                    const sink = logicalPlan.find(node => node.outputs.length === 0);
+                    const nodeMap = new Map(logicalPlan.map(n => [n.id, n]));
+                    const levelsMap = new Map();
+
+                    // recursively creates the levelsMap which assigns each logical node id to a level
+                    function assignLevelBottomUp(id, level = 0) {
+                        if (levelsMap.has(id) && levelsMap.get(id) <= level) return;
+                        levelsMap.set(id, level);
+                        const node = nodeMap.get(id);
+                        node.inputs?.forEach(inputId => assignLevelBottomUp(inputId, level + 1));
+                    }
+                    // start with sink
+                    assignLevelBottomUp(sink.id);
+
+                    // creates 2D array: levels which contains all logical nodes at the correct level
+                    const max = Math.max(...levelsMap.values());
+                    const levels = Array.from({ length: max + 1 }, () => []);
+                    logicalPlan.forEach(n => {
+                        const level = levelsMap.get(n.id);
+                        if (level !== undefined) levels[level].push(n);
+                    });
+
+                    // creates the html elements for each column and row in levels
+                    // reversing puts the sources at the top and the sink to the bottom
+                    levels.reverse().forEach(row => {
+                        // create a row for each level
+                        const rowDiv = document.createElement('div');
+                        rowDiv.className = 'tree-row';
+
+                        // for each column in each row/ level create a node container
+                        row.forEach(node => {
+                            const div = document.createElement('div');
+                            div.className = 'node-container';
+                            div.id = `logical-${node.id}`;
+
+                            // caption of node consisting of node type and id
+                            const caption = document.createElement('div');
+                            caption.className = 'node-caption';
+                            caption.innerHTML = `
+                                <span class="pipeline-id">${node.node_type} ${node.id}</span>
+                            `;
+
+                            // add caption to container
+                            div.appendChild(caption);
+
+                            // actual node label
+                            const label = document.createElement('div');
+                            label.className = 'node-content';
+                            label.textContent = node.label;
+
+                            // add node label to container
+                            div.appendChild(label);
+                            // add container to row
+                            rowDiv.appendChild(div);
+                        });
+                        // add row to tree
+                        treeContainer.appendChild(rowDiv);
+                    });
+
+                    // Draw arrows after DOM is fully updated
+                    setTimeout(() => {
+                        drawLogicalArrows();
+                        fitToViewport();
+                    }, 50);
+                }
+
+                // Separate function for drawing pipeline arrows
+                function drawArrows() {
+                    pipelinePlan.forEach(p => {
+                        const from = document.getElementById(`pipeline-${p.pipeline_id}`);
+                        if (!from || !p.successors) return;
+
+                        p.successors.forEach(succId => {
+                            const to = document.getElementById(`pipeline-${succId}`);
+                            if (to) {
+                                const line = drawLine(from, to);
+                                lines.push(line);
+                            }
+                        });
+                    });
+                }
+
+                // Separate function for drawing logical arrows
+                function drawLogicalArrows() {
+                    logicalPlan.forEach(n => {
+                        const from = document.getElementById(`logical-${n.id}`);
+                        n.outputs?.forEach(outId => {
+                            const to = document.getElementById(`logical-${outId}`);
+                            if (from && to) {
+                                const line = drawLine(from, to);
+                                lines.push(line);
+                            }
+                        });
+                    });
+                }
+
+                // creates and returns a line with improved options
+                function drawLine(from, to){
+                    return new LeaderLine(from, to, {
+                        color: '#aaa',
+                        path: 'straight',
+                        startPlug: 'behind',
+                        endPlug: 'arrow3',
+                        endPlugSize: 2,
+                        size: 1,
+                        dropShadow: false,
+                        startSocket: 'bottom',
+                        endSocket: 'auto',
+                        // Explicitly set container and bounds
+                        container: document.getElementById('tree-viewport')
+                    });
+                }
+
+                renderPipelinePlan();
+                initializeZoomPan();
+
+            })
+    });
+
+
+
 </script>
 {%  endblock %}
-<div id="custom-output">Loading...</div>
+<button id="toggle-view">Switch to Logical Plan</button>
+<div id="tree-viewport" class="tree-viewport">
+    <div class="viewport-hint">R: Reset | +/-: Zoom | Arrows: Pan | Double-click: Reset</div>
+    <div id="tree-container" class="tree"></div>
+    <div id="zoom-indicator" class="zoom-indicator">100%</div>
+</div>
