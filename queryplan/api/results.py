@@ -95,8 +95,8 @@ class QueryPlanEntityApi(ApiEndpoint):
         """
         serializedLogicalPlan, serializedPipelinePlan = self._get(benchmark_result_id)
         queryplan = {
-            "serializedLogicalPlan": self.logical_serializer.many._dump(serializedLogicalPlan),
-            "serializedPipelinePlan": self.pipeline_serializer.many._dump(serializedPipelinePlan)
+            "serializedLogicalPlan": self.logical_serializer.one.dump(serializedLogicalPlan),
+            "serializedPipelinePlan": self.pipeline_serializer.one.dump(serializedPipelinePlan)
         }
         return queryplan
 
