@@ -1,0 +1,447 @@
+[
+    {
+        "bytesPerSecond": 12527139.911267173,
+        "query name": "Nexmark",
+        "serializedLogicalPlan": [
+            {
+                "id": 10,
+                "inputs": [],
+                "label": "SOURCE(bid)",
+                "nodeType": "Source",
+                "outputs": [
+                    2
+                ]
+            },
+            {
+                "id": 2,
+                "inputs": [
+                    10
+                ],
+                "label": "PROJECTION(fields: [*, bid$timestamp as bid_timestamp])",
+                "nodeType": "Projection",
+                "outputs": [
+                    5
+                ]
+            },
+            {
+                "id": 5,
+                "inputs": [
+                    2
+                ],
+                "label": "WATERMARK_ASSIGNER(Event time)",
+                "nodeType": "EventTimeWatermarkAssigner",
+                "outputs": [
+                    7
+                ]
+            },
+            {
+                "id": 12,
+                "inputs": [],
+                "label": "SOURCE(auction)",
+                "nodeType": "Source",
+                "outputs": [
+                    4
+                ]
+            },
+            {
+                "id": 4,
+                "inputs": [
+                    12
+                ],
+                "label": "PROJECTION(fields: [*, auction$timestamp as auction_timestamp])",
+                "nodeType": "Projection",
+                "outputs": [
+                    6
+                ]
+            },
+            {
+                "id": 6,
+                "inputs": [
+                    4
+                ],
+                "label": "WATERMARK_ASSIGNER(Event time)",
+                "nodeType": "EventTimeWatermarkAssigner",
+                "outputs": [
+                    7
+                ]
+            },
+            {
+                "id": 7,
+                "inputs": [
+                    5,
+                    6
+                ],
+                "label": "INNER_JOIN(bid$auctionId = auction$id)",
+                "nodeType": "Join",
+                "outputs": [
+                    8
+                ]
+            },
+            {
+                "id": 8,
+                "inputs": [
+                    7
+                ],
+                "label": "PROJECTION(fields: [bidauction$start, bidauction$end, bid_timestamp, bid$auctionId, bid$bidder, bid$datetime, bid$price, auction_timestamp, auction$id, auction$initialbid, auction$reserve, auction$expires, auction$seller, auction$category])",
+                "nodeType": "Projection",
+                "outputs": [
+                    9
+                ]
+            },
+            {
+                "id": 9,
+                "inputs": [
+                    8
+                ],
+                "label": "SINK(q8Checksum1)",
+                "nodeType": "Sink",
+                "outputs": []
+            }
+        ],
+        "serializedPipelinePlan": [
+            {
+                "incomingTuples": 1810637,
+                "operators": [
+                    {
+                        "id": 27,
+                        "inputs": [],
+                        "label": "PhysicalOperator(NES::SourcePhysicalOperator)",
+                        "outputs": []
+                    }
+                ],
+                "pipelineId": 1,
+                "predecessors": [],
+                "successors": [
+                    2
+                ]
+            },
+            {
+                "incomingTuples": 1810637,
+                "operators": [
+                    {
+                        "id": 25,
+                        "inputs": [],
+                        "label": "PhysicalOperator(NES::ScanPhysicalOperator)",
+                        "outputs": [
+                            26
+                        ]
+                    },
+                    {
+                        "id": 26,
+                        "inputs": [
+                            25
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            24
+                        ]
+                    },
+                    {
+                        "id": 24,
+                        "inputs": [
+                            26
+                        ],
+                        "label": "PhysicalOperator(NES::EventTimeWatermarkAssignerPhysicalOperator)",
+                        "outputs": [
+                            17
+                        ]
+                    },
+                    {
+                        "id": 17,
+                        "inputs": [
+                            24
+                        ],
+                        "label": "PhysicalOperator(NES::NLJBuildPhysicalOperator)",
+                        "outputs": []
+                    }
+                ],
+                "pipelineId": 2,
+                "predecessors": [
+                    1
+                ],
+                "successors": [
+                    3
+                ]
+            },
+            {
+                "incomingTuples": 19917031,
+                "operators": [
+                    {
+                        "id": 19,
+                        "inputs": [],
+                        "label": "PhysicalOperator(NES::NLJProbePhysicalOperator)",
+                        "outputs": [
+                            28
+                        ]
+                    },
+                    {
+                        "id": 28,
+                        "inputs": [
+                            19
+                        ],
+                        "label": "PhysicalOperator(NES::EmitPhysicalOperator)",
+                        "outputs": []
+                    }
+                ],
+                "pipelineId": 3,
+                "predecessors": [
+                    2,
+                    7
+                ],
+                "successors": [
+                    4
+                ]
+            },
+            {
+                "incomingTuples": 9149189,
+                "operators": [
+                    {
+                        "id": 2,
+                        "inputs": [],
+                        "label": "PhysicalOperator(NES::ScanPhysicalOperator)",
+                        "outputs": [
+                            3
+                        ]
+                    },
+                    {
+                        "id": 3,
+                        "inputs": [
+                            2
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            4
+                        ]
+                    },
+                    {
+                        "id": 4,
+                        "inputs": [
+                            3
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            5
+                        ]
+                    },
+                    {
+                        "id": 5,
+                        "inputs": [
+                            4
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            6
+                        ]
+                    },
+                    {
+                        "id": 6,
+                        "inputs": [
+                            5
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            7
+                        ]
+                    },
+                    {
+                        "id": 7,
+                        "inputs": [
+                            6
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            8
+                        ]
+                    },
+                    {
+                        "id": 8,
+                        "inputs": [
+                            7
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            9
+                        ]
+                    },
+                    {
+                        "id": 9,
+                        "inputs": [
+                            8
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            10
+                        ]
+                    },
+                    {
+                        "id": 10,
+                        "inputs": [
+                            9
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            11
+                        ]
+                    },
+                    {
+                        "id": 11,
+                        "inputs": [
+                            10
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            12
+                        ]
+                    },
+                    {
+                        "id": 12,
+                        "inputs": [
+                            11
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            13
+                        ]
+                    },
+                    {
+                        "id": 13,
+                        "inputs": [
+                            12
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            14
+                        ]
+                    },
+                    {
+                        "id": 14,
+                        "inputs": [
+                            13
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            15
+                        ]
+                    },
+                    {
+                        "id": 15,
+                        "inputs": [
+                            14
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            16
+                        ]
+                    },
+                    {
+                        "id": 16,
+                        "inputs": [
+                            15
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            29
+                        ]
+                    },
+                    {
+                        "id": 29,
+                        "inputs": [
+                            16
+                        ],
+                        "label": "PhysicalOperator(NES::EmitPhysicalOperator)",
+                        "outputs": []
+                    }
+                ],
+                "pipelineId": 4,
+                "predecessors": [
+                    3
+                ],
+                "successors": [
+                    5
+                ]
+            },
+            {
+                "incomingTuples": 1,
+                "operators": [
+                    {
+                        "id": 1,
+                        "inputs": [],
+                        "label": "PhysicalOperator(NES::SinkPhysicalOperator)",
+                        "outputs": []
+                    }
+                ],
+                "pipelineId": 5,
+                "predecessors": [
+                    4
+                ],
+                "successors": []
+            },
+            {
+                "incomingTuples": 18106394,
+                "operators": [
+                    {
+                        "id": 23,
+                        "inputs": [],
+                        "label": "PhysicalOperator(NES::SourcePhysicalOperator)",
+                        "outputs": []
+                    }
+                ],
+                "pipelineId": 6,
+                "predecessors": [],
+                "successors": [
+                    7
+                ]
+            },
+            {
+                "incomingTuples": 18106394,
+                "operators": [
+                    {
+                        "id": 21,
+                        "inputs": [],
+                        "label": "PhysicalOperator(NES::ScanPhysicalOperator)",
+                        "outputs": [
+                            22
+                        ]
+                    },
+                    {
+                        "id": 22,
+                        "inputs": [
+                            21
+                        ],
+                        "label": "PhysicalOperator(NES::MapPhysicalOperator)",
+                        "outputs": [
+                            20
+                        ]
+                    },
+                    {
+                        "id": 20,
+                        "inputs": [
+                            22
+                        ],
+                        "label": "PhysicalOperator(NES::EventTimeWatermarkAssignerPhysicalOperator)",
+                        "outputs": [
+                            18
+                        ]
+                    },
+                    {
+                        "id": 18,
+                        "inputs": [
+                            20
+                        ],
+                        "label": "PhysicalOperator(NES::NLJBuildPhysicalOperator)",
+                        "outputs": []
+                    }
+                ],
+                "pipelineId": 7,
+                "predecessors": [
+                    6
+                ],
+                "successors": [
+                    3
+                ]
+            }
+        ],
+        "time": 60.867664,
+        "tuplesPerSecond": 327218.5868674047
+    }
+]

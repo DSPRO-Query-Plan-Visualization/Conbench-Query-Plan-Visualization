@@ -38,7 +38,7 @@ class SystestAdapter(BenchmarkAdapter):
         self.results = self.transform_results()
 
     def _transform_results(self) -> List[BenchmarkResult]:
-        with open(self.systest_working_dir + "/Nexmark.json", "r") as f:
+        with open(self.systest_working_dir + "/BenchmarkResults.json", "r") as f:
             raw_results = json.load(f)
 
         benchmarkResults = []
