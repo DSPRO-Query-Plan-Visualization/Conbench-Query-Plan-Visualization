@@ -13,7 +13,7 @@ from ..api._docs import api_server_url, spec
 from ..api._endpoint import ApiEndpoint
 from ..buildinfo import BUILD_INFO
 from ..config import Config
-from ..db import empty_db_tables, empty_db_tables_except_user
+from ..db import empty_db_tables
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +58,6 @@ def docs():
     # we do not need to bother with complicating approaches
     # in test_docs.
     if "/api/wipe-db" in d["paths"]:
-        del d["paths"]["/api/wipe-all-except-user"]
         del d["paths"]["/api/wipe-db"]
         del d["paths"]["/api/raise-httperr"]
         del d["paths"]["/api/raise-unexpected"]
@@ -208,13 +207,6 @@ if Config.TESTING:
     def wipe_db():
         log.info("clear DB tables")
         empty_db_tables()
-        return "200 OK", 200
-
-    #TODO: remove when done testing
-    @api.route("/wipe-all-except-user", methods=("GET",))
-    def wipe_except_user():
-        log.info("clear DB tables")
-        empty_db_tables_except_user()
         return "200 OK", 200
 
     @api.route("/raise-httperr", methods=("GET",))

@@ -26,11 +26,6 @@ from conbench.numstr import numstr, numstr_dyn
 from conbench.types import THistFingerprint
 from conbench.units import KNOWN_UNIT_SYMBOLS_STR, TUnit, less_is_better
 
-from ..entities.logical_query_plan import (LogicalQueryPlan, LogicalQueryPlanNode, LogicalQueryPlanSerializer)
-from ..entities.pipeline_query_plan import (PipelinePlan, PipelineNode, PipelinePlanSerializer)
-from ..entities.operator_query_plan import (OperatorPlan, OperatorNode)
-
-
 from ..entities._entity import (
     Base,
     EntityMixin,
@@ -98,10 +93,6 @@ class BenchmarkResult(Base, EntityMixin):
 
     hardware_id: Mapped[str] = NotNull(s.String(50), s.ForeignKey("hardware.id"))
     hardware: Mapped[Hardware] = relationship("Hardware", lazy="joined")
-
-    # logical and pipeline plans connected to this benchmark result
-    logical_query_plan: Mapped[Optional[LogicalQueryPlan]] = relationship("LogicalQueryPlan", lazy="joined", cascade="all, delete-orphan")
-    pipeline_query_plan: Mapped[Optional[PipelinePlan]] = relationship("PipelinePlan", lazy="joined", cascade="all, delete-orphan")
 
     # The "fingerprint" (identifier) of this result's "history" (timeseries group). Two
     # results with the same history_fingerprint should be directly comparable, because
@@ -198,6 +189,7 @@ class BenchmarkResult(Base, EntityMixin):
         Raises BenchmarkResultValidationError, exc message is expected to be
         emitted to the HTTP client in a Bad Request response.
         """
+
         validate_and_augment_result_tags(userres)
 
         # The dict that is used for DB insertion later, populated below.
@@ -308,47 +300,8 @@ class BenchmarkResult(Base, EntityMixin):
             hardware_hash=hardware.hash,
             repo_url=repo_url,
         )
-
         benchmark_result = BenchmarkResult(**result_data_for_db)
         benchmark_result.save()
-
-        # if present, creates the logical nodes and connects them to the logical plan -
-        # which points to the current benchmark result
-        if "serializedLogicalPlan" in userres:
-            logical_query_plan = LogicalQueryPlan.create({"benchmark_id":benchmark_result.id})
-            for node in userres["serializedLogicalPlan"]:
-                LogicalQueryPlanNode.create({
-                    "logical_query_plan_id" : logical_query_plan.id,
-                    "id"                    : node["id"],
-                    "label"                 : node["label"],
-                    "node_type"             : node["nodeType"],
-                    "inputs"                : node["inputs"],
-                    "outputs"               : node["outputs"],
-                })
-
-        # if present, creates the pipeline nodes and connects them to the pipeline plan -
-        # which points to the current benchmark result
-        if "serializedPipelinePlan" in userres:
-            pipeline_plan = PipelinePlan.create({"benchmark_id":benchmark_result.id})
-            for pipeline in userres["serializedPipelinePlan"]:
-                pipeline_node = PipelineNode.create({
-                    "pipeline_plan_id"  : pipeline_plan.id,
-                    "incoming_tuples"   : pipeline["incomingTuples"],
-                    "pipeline_id"       : pipeline["pipelineId"],
-                    "predecessors"      : pipeline["predecessors"],
-                    "successors"        : pipeline["successors"],
-                })
-                # each pipeline node holds an operator plan which in turn spans multiple operator nodes
-                operator_plan = OperatorPlan.create({"pipeline_node_id" : pipeline_node.id,})
-                for operator in pipeline["operators"]:
-                    OperatorNode.create({
-                        "operator_plan_id"  : operator_plan.id,
-                        "id"                : operator["id"],
-                        "label"             : operator["label"],
-                        "inputs"            : operator["inputs"],
-                        "outputs"           : operator["outputs"],
-                    })
-
 
         return benchmark_result
 
@@ -419,19 +372,6 @@ class BenchmarkResult(Base, EntityMixin):
 
             hardware_dict = HardwareSerializer().one.dump(benchmark_result.hardware)
             hardware_dict.pop("links", None)
-
-            # adds the logical and pipeline plan to the dict
-            if benchmark_result.pipeline_query_plan:
-                out_dict["pipeline_query_plan"] = PipelinePlanSerializer().many._dump(benchmark_result.pipeline_query_plan)
-            if benchmark_result.logical_query_plan:
-                out_dict["logical_query_plan"] = LogicalQueryPlanSerializer().many._dump(benchmark_result.logical_query_plan)
-            # else:
-            #     out_dict["logical_query_plan"] = None
-            #
-            # if we do this we also have to change the tests and some functions
-            # currently used alternative: make sure that we set default values in the html using jinja
-            # like:
-            #      const logical = {{ benchmark.logical_query_plan | default('[]') | tojson }};
 
             out_dict["tags"] = tags
             out_dict["commit"] = commit_dict
@@ -1277,37 +1217,6 @@ class BenchmarkResultSerializer:
     one = _Serializer()
     many = _Serializer(many=True)
 
-# marshmallow schema for the logical query plan
-class LogicalQueryPlanNodeSchema(marshmallow.Schema):
-    id          = marshmallow.fields.Integer()
-    label       = marshmallow.fields.String()
-    nodeType    = marshmallow.fields.String()
-    inputs      = marshmallow.fields.List( marshmallow.fields.Integer(allow_none=True),
-                                           required=False)
-    outputs     = marshmallow.fields.List( marshmallow.fields.Integer(allow_none=True),
-                                           required=False)
-
-# marshmallow schema for the operator nodes which are nested in the pipeline nodes
-class OperatorQueryPlanNodeSchema(marshmallow.Schema):
-    id          = marshmallow.fields.Integer()
-    label       = marshmallow.fields.String()
-    inputs      = marshmallow.fields.List( marshmallow.fields.Integer(allow_none=True),
-                                           required=False)
-    outputs     = marshmallow.fields.List( marshmallow.fields.Integer(allow_none=True),
-                                           required=False)
-
-# marshmallow schema for the pipeline nodes, contains the operator nodes
-class PipelineQueryPlanSchema(marshmallow.Schema):
-    pipelineId      = marshmallow.fields.Integer()
-    incomingTuples  = marshmallow.fields.Integer()
-    predecessors    = marshmallow.fields.List( marshmallow.fields.Integer(allow_none=True),
-                                               required=False)
-    successors      = marshmallow.fields.List( marshmallow.fields.Integer(allow_none=True),
-                                               required=False)
-    operators       = marshmallow.fields.List(
-                                    marshmallow.fields.Nested(OperatorQueryPlanNodeSchema),
-                                    required=False)
-
 
 class BenchmarkResultStatsSchema(marshmallow.Schema):
     data = marshmallow.fields.List(
@@ -1770,49 +1679,7 @@ class _BenchmarkResultCreateSchema(marshmallow.Schema):
             )
         },
     )
-
     stats = marshmallow.fields.Nested(BenchmarkResultStatsSchema(), required=False)
-
-    serializedLogicalPlan = marshmallow.fields.List(
-        marshmallow.fields.Nested(
-            LogicalQueryPlanNodeSchema,
-            required=False,
-            metadata={
-                "description": conbench.util.dedent_rejoin(
-                    """
-                    The logical plan sent as 'serializedLogicalPlan' by benchmark.py. 
-                    The plan is optional and saved into separate tables, following this schema:
-                        
-                        benchmark_result <--- logical_query_plan <--- [ logical_query_plan_node ]
-                    
-                    The logical plan shows up under /benchmark-results/<id>.
-                    """
-                )
-            }
-        ),
-        required=False,
-    )
-
-    serializedPipelinePlan = marshmallow.fields.List(
-        marshmallow.fields.Nested(
-            PipelineQueryPlanSchema,
-            required=False,
-            metadata={
-                "description": conbench.util.dedent_rejoin(
-                    """
-                    The pipeline plan sent as 'serializedPipelinePlan' by benchmark.py. 
-                    The plan is optional and saved into separate tables, following this schema:
-
-                        benchmark_result <--- pipeline_plan <--- [ pipeline_node ] <--- operator_plan <--- [ operator_nodes ]
-
-                    The pipeline plan shows up under /benchmark-results/<id>.
-                    """
-                )
-            }
-        ),
-        required=False,
-    )
-
     error = marshmallow.fields.Dict(
         required=False,
         metadata={
