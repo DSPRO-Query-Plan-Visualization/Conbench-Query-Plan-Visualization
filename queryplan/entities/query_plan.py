@@ -102,86 +102,50 @@ class PipelinePlan(Base, EntityMixin["PipelinePlan"]):
 
 
 """
-Event based creation of the benchmark_result dependant query plans.
-'benchmark_request_json' is stored before hand by the
-'stash_benchmark_data()' function in queryplan/api/results, which gets 
-triggered by a POST request to '/api/benchmarks/'.
-For more info see the explanation in queryplan/api/results.py.
+Raw function for inserting query plans into the db.
+Checked and called by create_queryplan_after_benchmark in queryplan/api/results.py.
 """
-@event.listens_for(BenchmarkResult, "after_insert")
-def create_query_plan(mapper, connection, target):
+def _create_queryplan_in_db(userres,benchmark_id):
     try:
-        data = g.get("benchmark_request_json", {})
-        benchmark_id = target.id
+        # if present, creates the logical nodes and connects them to the logical plan -
+        # which points to the current benchmark result
+        if "serializedLogicalPlan" in userres:
+            logical_query_plan = LogicalQueryPlan.create({"benchmark_id": benchmark_id})
+            for node in userres["serializedLogicalPlan"]:
+                LogicalQueryPlanNode.create({
+                    "logical_query_plan_id": logical_query_plan.id,
+                    "id": node["id"],
+                    "label": node["label"],
+                    "node_type": node["nodeType"],
+                    "inputs": node["inputs"],
+                    "outputs": node["outputs"],
+                })
 
-        # =================== Logical Plan ===================
-        serialized_logical = data.get("serializedLogicalPlan")
-        if serialized_logical:
-            logical_plan_id = str(uuid4())
-            connection.execute(
-                LogicalQueryPlan.__table__.insert().values(
-                    id=logical_plan_id,
-                    benchmark_id=benchmark_id
-                )
-            )
-            for node in serialized_logical:
-                connection.execute(
-                    LogicalQueryPlanNode.__table__.insert().values(
-                        logical_query_plan_id=logical_plan_id,
-                        id=node["id"],
-                        label=node.get("label"),
-                        node_type=node.get("nodeType"),
-                        inputs=node.get("inputs", []),
-                        outputs=node.get("outputs", [])
-                    )
-                )
-
-        # ================== Pipeline Plan ===================
-        serialized_pipeline = data.get("serializedPipelinePlan")
-        if serialized_pipeline:
-            pipeline_plan_id = str(uuid4())
-            connection.execute(
-                PipelinePlan.__table__.insert().values(
-                    id=pipeline_plan_id,
-                    benchmark_id=benchmark_id
-                )
-            )
-
-            for pipeline in serialized_pipeline:
-                pipeline_node_id = str(uuid4())
-                connection.execute(
-                    PipelineNode.__table__.insert().values(
-                        id=pipeline_node_id,
-                        pipeline_plan_id=pipeline_plan_id,
-                        pipeline_id=pipeline["pipelineId"],
-                        incoming_tuples=pipeline["incomingTuples"],
-                        predecessors=pipeline.get("predecessors", []),
-                        successors=pipeline.get("successors", [])
-                    )
-                )
-
-                operator_plan_id = str(uuid4())
-                connection.execute(
-                    OperatorPlan.__table__.insert().values(
-                        id=operator_plan_id,
-                        pipeline_node_id=pipeline_node_id
-                    )
-                )
-
-                for operator in pipeline.get("operators", []):
-                    connection.execute(
-                        OperatorNode.__table__.insert().values(
-                            operator_node_id=str(uuid4()),
-                            operator_plan_id=operator_plan_id,
-                            id=operator["id"],
-                            label=operator.get("label"),
-                            inputs=operator.get("inputs", []),
-                            outputs=operator.get("outputs", [])
-                        )
-                    )
+        # if present, creates the pipeline nodes and connects them to the pipeline plan -
+        # which points to the current benchmark result
+        if "serializedPipelinePlan" in userres:
+            pipeline_plan = PipelinePlan.create({"benchmark_id": benchmark_id})
+            for pipeline in userres["serializedPipelinePlan"]:
+                pipeline_node = PipelineNode.create({
+                    "pipeline_plan_id": pipeline_plan.id,
+                    "incoming_tuples": pipeline["incomingTuples"],
+                    "pipeline_id": pipeline["pipelineId"],
+                    "predecessors": pipeline["predecessors"],
+                    "successors": pipeline["successors"],
+                })
+                # each pipeline node holds an operator plan which in turn spans multiple operator nodes
+                operator_plan = OperatorPlan.create({"pipeline_node_id": pipeline_node.id, })
+                for operator in pipeline["operators"]:
+                    OperatorNode.create({
+                        "operator_plan_id": operator_plan.id,
+                        "id": operator["id"],
+                        "label": operator["label"],
+                        "inputs": operator["inputs"],
+                        "outputs": operator["outputs"],
+                    })
     except Exception as e:
-        log.exception("Failed to create query plan: %s", e)
-
+        log.warning(f"Query plan creation failed: {e}")
+    return userres
 
 # ============================ Serializer ============================:
 # Logical serializer

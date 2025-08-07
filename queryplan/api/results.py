@@ -1,7 +1,11 @@
-from queryplan.entities.query_plan import LogicalQueryPlan, LogicalQueryPlanSerializer, PipelinePlanSerializer
+import json
+
+from conbench.entities.benchmark_result import BenchmarkResult
+from queryplan.entities.query_plan import LogicalQueryPlan, LogicalQueryPlanSerializer, PipelinePlanSerializer, \
+    _create_queryplan_in_db
 from queryplan.entities.query_plan import PipelinePlan
 import logging
-from flask import request, jsonify, render_template, g
+from flask import request, jsonify, render_template, url_for
 from conbench.api import api, rule
 from conbench.api._endpoint import ApiEndpoint, maybe_login_required
 import flask_login
@@ -23,13 +27,6 @@ Creation process of a new benchmark_result entry:
         - the request is already validated
         - the benchmark_result entry created
         - login requirements checked
-
-        To make sure the atomicity of the transaction is unaffected,
-        we add an event_listener that hooks into the process after insertion.
-        Then we simply create our own tables and finish the transaction.
-        See:
-            stash_benchmark_data()  - below
-            create_query_plan()     - queryplan/entities/queryplan.py
 -------
 """
 
@@ -37,14 +34,25 @@ Creation process of a new benchmark_result entry:
 log = logging.getLogger(__name__)
 
 """
-Stashes the benchmark result json.
 Successful creation of a benchmark_result entry will trigger the
-event listener which then creates the query plan tables from this stash.
+event listener which then creates the query plan tables.
 """
-@api.before_request
-def stash_benchmark_data():
-    if request.method == "POST" and request.path == "/api/benchmarks/":
-        g.benchmark_request_json = request.get_json()
+@api.after_request
+def create_queryplan_after_benchmark(response):
+    if (
+        request.method == "POST"
+        and request.path == url_for("api.benchmarks")
+        and response.status_code == 201
+    ):
+        try:
+            req_data = request.get_json()
+            res_data = response.get_json()
+            benchmark_id = res_data.get("id")
+            if benchmark_id and BenchmarkResult.one(id=benchmark_id):
+                _create_queryplan_in_db(req_data,benchmark_id)
+        except Exception as e:
+            log.warning(f"Query plan creation failed: {e}")
+    return response
 
 """
 This route is for fetching the query plans using a benchmark_result_id.
