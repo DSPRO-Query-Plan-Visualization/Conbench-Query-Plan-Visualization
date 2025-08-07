@@ -145,7 +145,6 @@ def _create_queryplan_in_db(userres,benchmark_id):
                     })
     except Exception as e:
         log.warning(f"Query plan creation failed: {e}")
-    return userres
 
 # ============================ Serializer ============================:
 # Logical serializer
