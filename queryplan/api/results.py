@@ -53,6 +53,7 @@ def create_queryplan_after_benchmark(response):
         except Exception as e:
             log.warning(f"Query plan creation failed: {e}")
     return response
+
 """
 This route is for fetching the query plans using a benchmark_result_id.
 The response has this format:
